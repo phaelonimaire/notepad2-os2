@@ -118,3 +118,113 @@
 #define IDC_SORTNOCASE      766
 #define IDC_SORTLOGICAL     767
 #define IDC_SORTCOLUMN      768
+
+/* ==========================================================================
+ * Batch 3 commands.  Grouped by submenu; values are arbitrary but kept dense
+ * so the passthrough table in np2.c stays easy to scan.
+ * ========================================================================== */
+
+/* File */
+#define IDM_REVERT          110
+#define IDM_READONLY        111
+
+/* Edit */
+#define IDM_COPYALL         220
+#define IDM_COPYADD         221
+#define IDM_CLEAR           222
+#define IDM_CLEARCLIPBOARD  223
+
+/* Edit > Lines */
+#define IDM_MOVELINEUP      230
+#define IDM_MOVELINEDOWN    231
+#define IDM_DUPLICATELINE   232
+#define IDM_CUTLINE         233
+#define IDM_COPYLINE        234
+#define IDM_DELETELINE      235
+#define IDM_SPLITLINES      236
+#define IDM_JOINLINES       237
+#define IDM_JOINPARAGRAPHS  238
+
+/* Edit > Block */
+#define IDM_INDENT          240
+#define IDM_UNINDENT        241
+#define IDM_SELDUPLICATE    242
+#define IDM_PADWITHSPACES   243
+#define IDM_STRIP1STCHAR    244
+#define IDM_STRIPLASTCHAR   245
+#define IDM_TRIMLINES       246
+#define IDM_COMPRESSWS      247
+#define IDM_MERGEBLANKLINES 248
+#define IDM_REMOVEBLANKLINES 249
+
+/* Edit > Enclose Selection */
+#define IDM_ENCLOSE_PAREN   250
+#define IDM_ENCLOSE_BRACE   251
+#define IDM_ENCLOSE_BRACKET 252
+#define IDM_ENCLOSE_SQUOTE  253
+#define IDM_ENCLOSE_DQUOTE  254
+#define IDM_ENCLOSE_BACKTICK 255
+
+/* Edit > Convert */
+#define IDM_UPPERCASE       260
+#define IDM_LOWERCASE       261
+#define IDM_INVERTCASE      262
+#define IDM_TITLECASE       263
+#define IDM_SENTENCECASE    264
+#define IDM_TABIFYSEL       265
+#define IDM_UNTABIFYSEL     266
+#define IDM_TABIFYINDENT    267
+#define IDM_UNTABIFYINDENT  268
+
+/* Edit > Insert */
+#define IDM_INSERT_TIMESHORT 270
+#define IDM_INSERT_TIMELONG  271
+#define IDM_INSERT_FILENAME  272
+#define IDM_INSERT_PATHNAME  273
+
+/* Edit > Special */
+#define IDM_LINECOMMENT     280
+#define IDM_STREAMCOMMENT   281
+#define IDM_URLENCODE       282
+#define IDM_URLDECODE       283
+#define IDM_ESCAPECCHARS    284
+#define IDM_UNESCAPECCHARS  285
+#define IDM_CHAR2HEX        286
+#define IDM_HEX2CHAR        287
+#define IDM_FINDMATCHBRACE  288
+#define IDM_SELTOMATCHBRACE 289
+#define IDM_DELLINELEFT     290
+#define IDM_DELLINERIGHT    291
+#define IDM_DELWORDLEFT     292
+#define IDM_DELWORDRIGHT    293
+
+/* Edit > Bookmarks */
+#define IDM_BOOKMARKTOGGLE  294
+#define IDM_BOOKMARKNEXT    295
+#define IDM_BOOKMARKPREV    296
+#define IDM_BOOKMARKCLEAR   297
+
+/* submenu anchors */
+#define IDM_BLOCK           298
+#define IDM_ENCLOSEMENU     299
+#define IDM_CONVERT         310
+#define IDM_INSERTMENU      311
+#define IDM_SPECIAL         312
+#define IDM_BOOKMARKS       313
+
+/* View */
+#define IDM_LONGLINEMARKER  320
+#define IDM_INDENTGUIDES    321
+#define IDM_SHOWWHITESPACE  322
+#define IDM_SHOWEOLS        323
+#define IDM_HILITECURLINE   324
+#define IDM_SELMARGIN       325
+#define IDM_FOLDING         326
+#define IDM_TOGGLEFOLDS     327
+#define IDM_ZOOMIN          328
+#define IDM_ZOOMOUT         329
+#define IDM_RESETZOOM       330
+
+/* Settings */
+#define IDM_TABSASSPACES    340
+#define IDM_AUTOINDENT      341

@@ -21,6 +21,7 @@
 #include "np2find.h"
 #include "np2edit.h"
 #include "np2dlg.h"
+#include "np2cmd.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -44,6 +45,50 @@ static char szTagOpen[256] = "";
 static char szTagClose[256] = "";
 static int  iAlignMode = ALIGN_LEFT;
 static int  iSortFlags = SORT_ASCENDING;
+
+/* View toggles. Each is reflected into the menu by SyncMenu, so the check marks
+ * and the editor never disagree. */
+static BOOL bLongLineMarker = TRUE;
+static BOOL bIndentGuides   = FALSE;
+static BOOL bShowWhitespace = FALSE;
+static BOOL bShowEOLs       = FALSE;
+static BOOL bHiliteCurLine  = FALSE;
+static BOOL bSelMargin      = FALSE;
+static BOOL bFolding        = FALSE;
+static BOOL bFoldsCollapsed = FALSE;
+static BOOL bAutoIndent     = TRUE;
+static BOOL bReadOnly       = FALSE;
+
+/* Commands that are nothing but a Scintilla message. Keeping them in a table
+ * rather than the switch is the difference between a readable dispatch and
+ * eighty near-identical cases. */
+static const struct { USHORT id; unsigned int msg; } aPassthrough[] = {
+    { IDM_UNDO,            SCI_UNDO },
+    { IDM_REDO,            SCI_REDO },
+    { IDM_CUT,             SCI_CUT },
+    { IDM_COPY,            SCI_COPY },
+    { IDM_PASTE,           SCI_PASTE },
+    { IDM_CLEAR,           SCI_CLEAR },
+    { IDM_SELECTALL,       SCI_SELECTALL },
+    { IDM_MOVELINEUP,      SCI_MOVESELECTEDLINESUP },
+    { IDM_MOVELINEDOWN,    SCI_MOVESELECTEDLINESDOWN },
+    { IDM_DUPLICATELINE,   SCI_LINEDUPLICATE },
+    { IDM_CUTLINE,         SCI_LINECUT },
+    { IDM_COPYLINE,        SCI_LINECOPY },
+    { IDM_DELETELINE,      SCI_LINEDELETE },
+    { IDM_INDENT,          SCI_TAB },
+    { IDM_UNINDENT,        SCI_BACKTAB },
+    { IDM_SELDUPLICATE,    SCI_SELECTIONDUPLICATE },
+    { IDM_UPPERCASE,       SCI_UPPERCASE },
+    { IDM_LOWERCASE,       SCI_LOWERCASE },
+    { IDM_DELLINELEFT,     SCI_DELLINELEFT },
+    { IDM_DELLINERIGHT,    SCI_DELLINERIGHT },
+    { IDM_DELWORDLEFT,     SCI_DELWORDLEFT },
+    { IDM_DELWORDRIGHT,    SCI_DELWORDRIGHT },
+    { IDM_ZOOMIN,          SCI_ZOOMIN },
+    { IDM_ZOOMOUT,         SCI_ZOOMOUT },
+    { 0, 0 }
+};
 
 static CHAR szFileName[CCHMAXPATH] = "";
 static CHAR szStatus[256] = "";
@@ -237,9 +282,68 @@ static BOOL ConfirmDiscard(HWND hwnd)
  * else instead of a private ApplyView. */
 static void ApplyView(void)
 {
-    settings.fWordWrap    = bWordWrap;
-    settings.bLineNumbers = bLineNumbers;
+    settings.fWordWrap       = bWordWrap;
+    settings.bLineNumbers    = bLineNumbers;
+    settings.bMarkLongLines  = bLongLineMarker;
     ApplySettings(hwndSci, &settings);
+
+    Sci(SCI_SETINDENTATIONGUIDES, MPFROMLONG(bIndentGuides ? SC_IV_LOOKBOTH : SC_IV_NONE), 0);
+    Sci(SCI_SETVIEWWS,   MPFROMLONG(bShowWhitespace ? SCWS_VISIBLEALWAYS : SCWS_INVISIBLE), 0);
+    Sci(SCI_SETVIEWEOL,  MPFROMLONG(bShowEOLs), 0);
+    Sci(SCI_SETCARETLINEVISIBLE, MPFROMLONG(bHiliteCurLine), 0);
+
+    /* Margin 1 is Scintilla's symbol margin; it carries the bookmark markers,
+     * so it has to stay wide enough to show one when folding is off. */
+    Sci(SCI_SETMARGINTYPEN,  MPFROMLONG(1), MPFROMLONG(SC_MARGIN_SYMBOL));
+    Sci(SCI_SETMARGINMASKN,  MPFROMLONG(1), MPFROMLONG(~SC_MASK_FOLDERS));
+    Sci(SCI_SETMARGINWIDTHN, MPFROMLONG(1), MPFROMLONG(bSelMargin ? 16 : 0));
+
+    /* Margin 2 is the fold margin. */
+    Sci(SCI_SETMARGINTYPEN,      MPFROMLONG(2), MPFROMLONG(SC_MARGIN_SYMBOL));
+    Sci(SCI_SETMARGINMASKN,      MPFROMLONG(2), MPFROMLONG(SC_MASK_FOLDERS));
+    Sci(SCI_SETMARGINSENSITIVEN, MPFROMLONG(2), MPFROMLONG(bFolding));
+    Sci(SCI_SETMARGINWIDTHN,     MPFROMLONG(2), MPFROMLONG(bFolding ? 14 : 0));
+
+    Sci(SCI_SETTABINDENTS, MPFROMLONG(bAutoIndent), 0);
+    Sci(SCI_SETREADONLY,   MPFROMLONG(bReadOnly), 0);
+}
+
+/* Bookmarks ride on marker 1, clear of SC_MASK_FOLDERS. */
+#define NP2_BOOKMARK 1
+
+static void BookmarkToggle(void)
+{
+    LONG line = LONGFROMMR(Sci(SCI_LINEFROMPOSITION,
+                   MPFROMLONG(LONGFROMMR(Sci(SCI_GETCURRENTPOS, 0, 0))), 0));
+    LONG mask = LONGFROMMR(Sci(SCI_MARKERGET, MPFROMLONG(line), 0));
+    if (mask & (1 << NP2_BOOKMARK))
+        Sci(SCI_MARKERDELETE, MPFROMLONG(line), MPFROMLONG(NP2_BOOKMARK));
+    else
+        Sci(SCI_MARKERADD, MPFROMLONG(line), MPFROMLONG(NP2_BOOKMARK));
+}
+
+static void BookmarkGoto(BOOL bNext)
+{
+    LONG line = LONGFROMMR(Sci(SCI_LINEFROMPOSITION,
+                   MPFROMLONG(LONGFROMMR(Sci(SCI_GETCURRENTPOS, 0, 0))), 0));
+    LONG found;
+    if (bNext)
+        found = LONGFROMMR(Sci(SCI_MARKERNEXT, MPFROMLONG(line + 1),
+                               MPFROMLONG(1 << NP2_BOOKMARK)));
+    else
+        found = LONGFROMMR(Sci(SCI_MARKERPREVIOUS, MPFROMLONG(line - 1),
+                               MPFROMLONG(1 << NP2_BOOKMARK)));
+    /* Wrap, so Next from the last bookmark returns to the first. */
+    if (found < 0)
+        found = bNext
+              ? LONGFROMMR(Sci(SCI_MARKERNEXT, 0, MPFROMLONG(1 << NP2_BOOKMARK)))
+              : LONGFROMMR(Sci(SCI_MARKERPREVIOUS,
+                    MPFROMLONG(LONGFROMMR(Sci(SCI_GETLINECOUNT, 0, 0))),
+                    MPFROMLONG(1 << NP2_BOOKMARK)));
+    if (found >= 0) {
+        Sci(SCI_ENSUREVISIBLE, MPFROMLONG(found), 0);
+        Sci(SCI_GOTOLINE, MPFROMLONG(found), 0);
+    }
 }
 
 /* Reflect the toggles into the menu with MM_SETITEMATTR
@@ -255,6 +359,26 @@ static void SyncMenu(HWND hwndFrame)
     WinSendMsg(hwndMenu, MM_SETITEMATTR,
                MPFROM2SHORT(IDM_LINENUMBERS, TRUE),
                MPFROM2SHORT(MIA_CHECKED, bLineNumbers ? MIA_CHECKED : 0));
+    {
+        static const struct { USHORT id; const BOOL *pf; } aChecks[] = {
+            { IDM_LONGLINEMARKER, &bLongLineMarker },
+            { IDM_INDENTGUIDES,   &bIndentGuides   },
+            { IDM_SHOWWHITESPACE, &bShowWhitespace },
+            { IDM_SHOWEOLS,       &bShowEOLs       },
+            { IDM_HILITECURLINE,  &bHiliteCurLine  },
+            { IDM_SELMARGIN,      &bSelMargin      },
+            { IDM_FOLDING,        &bFolding        },
+            { IDM_AUTOINDENT,     &bAutoIndent     },
+            { IDM_READONLY,       &bReadOnly       },
+            { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
+            { 0, NULL }
+        };
+        int i;
+        for (i = 0; aChecks[i].id; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                       MPFROM2SHORT(aChecks[i].id, TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, *aChecks[i].pf ? MIA_CHECKED : 0));
+    }
 }
 
 MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
@@ -319,7 +443,19 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
          * yanked back to the editor at the end of this handler. */
         BOOL bKeepFocus = FALSE;
 
-        switch (SHORT1FROMMP(mp1)) {
+        USHORT idCmd = SHORT1FROMMP(mp1);
+        int i;
+
+        /* Pure Scintilla commands first - see aPassthrough. */
+        for (i = 0; aPassthrough[i].id; i++) {
+            if (aPassthrough[i].id == idCmd) {
+                Sci(aPassthrough[i].msg, 0, 0);
+                WinSetFocus(HWND_DESKTOP, hwndSci);
+                return (MRESULT)0;
+            }
+        }
+
+        switch (idCmd) {
         case IDM_NEW:
             if (!ConfirmDiscard(hwnd))
                 break;
@@ -450,6 +586,142 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
         case IDM_ABOUT:
             EditAboutDlg(hwnd);
+            break;
+
+        /* --- Edit: clipboard extras ---------------------------------------- */
+        case IDM_COPYALL:
+            Sci(SCI_SELECTALL, 0, 0);
+            Sci(SCI_COPY, 0, 0);
+            break;
+        case IDM_COPYADD:
+            EditCopyAppend(hwndSci);
+            break;
+        case IDM_CLEARCLIPBOARD:
+            if (WinOpenClipbrd(WinQueryAnchorBlock(hwnd))) {
+                WinEmptyClipbrd(WinQueryAnchorBlock(hwnd));
+                WinCloseClipbrd(WinQueryAnchorBlock(hwnd));
+            }
+            break;
+
+        /* --- Lines --------------------------------------------------------- */
+        case IDM_SPLITLINES:      EditSplitLines(hwndSci);          break;
+        case IDM_JOINLINES:       EditJoinLines(hwndSci, FALSE);    break;
+        case IDM_JOINPARAGRAPHS:  EditJoinLines(hwndSci, TRUE);     break;
+
+        /* --- Block --------------------------------------------------------- */
+        case IDM_PADWITHSPACES:    EditPadWithSpaces(hwndSci);          break;
+        case IDM_STRIP1STCHAR:     EditStripFirstCharacter(hwndSci);    break;
+        case IDM_STRIPLASTCHAR:    EditStripLastCharacter(hwndSci);     break;
+        case IDM_TRIMLINES:        EditStripTrailingBlanks(hwndSci);    break;
+        case IDM_COMPRESSWS:       EditCompressSpaces(hwndSci);         break;
+        case IDM_MERGEBLANKLINES:  EditRemoveBlankLines(hwndSci, TRUE); break;
+        case IDM_REMOVEBLANKLINES: EditRemoveBlankLines(hwndSci, FALSE); break;
+
+        /* --- Enclose shortcuts. These are EditEncloseSelection with fixed
+         * strings, which is exactly how Notepad2 implements them too. ------- */
+        case IDM_ENCLOSE_PAREN:    EditEncloseSelection(hwndSci, "(", ")");   break;
+        case IDM_ENCLOSE_BRACE:    EditEncloseSelection(hwndSci, "{", "}");   break;
+        case IDM_ENCLOSE_BRACKET:  EditEncloseSelection(hwndSci, "[", "]");   break;
+        case IDM_ENCLOSE_SQUOTE:   EditEncloseSelection(hwndSci, "'", "'");   break;
+        case IDM_ENCLOSE_DQUOTE:   EditEncloseSelection(hwndSci, "\"", "\""); break;
+        case IDM_ENCLOSE_BACKTICK: EditEncloseSelection(hwndSci, "`", "`");   break;
+
+        /* --- Convert ------------------------------------------------------- */
+        case IDM_INVERTCASE:      EditInvertCase(hwndSci);    break;
+        case IDM_TITLECASE:       EditTitleCase(hwndSci);     break;
+        case IDM_SENTENCECASE:    EditSentenceCase(hwndSci);  break;
+        case IDM_TABIFYSEL:       EditSpacesToTabs(hwndSci, settings.iTabWidth, FALSE); break;
+        case IDM_UNTABIFYSEL:     EditTabsToSpaces(hwndSci, settings.iTabWidth, FALSE); break;
+        case IDM_TABIFYINDENT:    EditSpacesToTabs(hwndSci, settings.iTabWidth, TRUE);  break;
+        case IDM_UNTABIFYINDENT:  EditTabsToSpaces(hwndSci, settings.iTabWidth, TRUE);  break;
+
+        /* --- Insert -------------------------------------------------------- */
+        case IDM_INSERT_TIMESHORT: EditInsertDateTime(hwndSci, TRUE);  break;
+        case IDM_INSERT_TIMELONG:  EditInsertDateTime(hwndSci, FALSE); break;
+        case IDM_INSERT_FILENAME: {
+            /* Filename only - walk back from the end to the last separator. */
+            const char *p = szFileName;
+            const char *q = strrchr(szFileName, '\\');
+            const char *r = strrchr(szFileName, '/');
+            if (r > q) q = r;
+            if (q) p = q + 1;
+            EditInsertString(hwndSci, p);
+            break;
+        }
+        case IDM_INSERT_PATHNAME:
+            EditInsertString(hwndSci, szFileName);
+            break;
+
+        /* --- Special ------------------------------------------------------- */
+        case IDM_LINECOMMENT:
+            /* No lexer is wired up yet, so the marker cannot come from the
+             * language. "//" is the honest default until Styles.c lands. */
+            EditToggleLineComments(hwndSci, "//", FALSE);
+            break;
+        case IDM_STREAMCOMMENT:
+            EditEncloseSelection(hwndSci, "/* ", " */");
+            break;
+        case IDM_URLENCODE:      EditURLEncode(hwndSci);      break;
+        case IDM_URLDECODE:      EditURLDecode(hwndSci);      break;
+        case IDM_ESCAPECCHARS:   EditEscapeCChars(hwndSci);   break;
+        case IDM_UNESCAPECCHARS: EditUnescapeCChars(hwndSci); break;
+        case IDM_CHAR2HEX:       EditChar2Hex(hwndSci);       break;
+        case IDM_HEX2CHAR:       EditHex2Char(hwndSci);       break;
+        case IDM_FINDMATCHBRACE:  EditFindMatchingBrace(hwndSci, FALSE); break;
+        case IDM_SELTOMATCHBRACE: EditFindMatchingBrace(hwndSci, TRUE);  break;
+
+        /* --- Bookmarks ----------------------------------------------------- */
+        case IDM_BOOKMARKTOGGLE: BookmarkToggle();      break;
+        case IDM_BOOKMARKNEXT:   BookmarkGoto(TRUE);    break;
+        case IDM_BOOKMARKPREV:   BookmarkGoto(FALSE);   break;
+        case IDM_BOOKMARKCLEAR:
+            Sci(SCI_MARKERDELETEALL, MPFROMLONG(NP2_BOOKMARK), 0);
+            break;
+
+        /* --- View toggles -------------------------------------------------- */
+        case IDM_LONGLINEMARKER: bLongLineMarker = !bLongLineMarker; ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_INDENTGUIDES:   bIndentGuides   = !bIndentGuides;   ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_SHOWWHITESPACE: bShowWhitespace = !bShowWhitespace; ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_SHOWEOLS:       bShowEOLs       = !bShowEOLs;       ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_HILITECURLINE:  bHiliteCurLine  = !bHiliteCurLine;  ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_SELMARGIN:      bSelMargin      = !bSelMargin;      ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_AUTOINDENT:     bAutoIndent     = !bAutoIndent;     ApplyView(); SyncMenu(hwndFrame); break;
+        case IDM_READONLY:       bReadOnly       = !bReadOnly;       ApplyView(); SyncMenu(hwndFrame); break;
+
+        case IDM_FOLDING:
+            bFolding = !bFolding;
+            /* Folding needs the lexer to emit fold levels. Without a lexer the
+             * margin would draw empty, so say so rather than show a dead margin. */
+            Sci(SCI_SETPROPERTY, MPFROMP((void *)"fold"), MPFROMP((void *)(bFolding ? "1" : "0")));
+            ApplyView();
+            SyncMenu(hwndFrame);
+            break;
+
+        case IDM_TOGGLEFOLDS:
+            bFoldsCollapsed = !bFoldsCollapsed;
+            Sci(SCI_FOLDALL, MPFROMLONG(bFoldsCollapsed ? SC_FOLDACTION_CONTRACT
+                                                        : SC_FOLDACTION_EXPAND), 0);
+            break;
+
+        case IDM_RESETZOOM:
+            Sci(SCI_SETZOOM, MPFROMLONG(0), 0);
+            break;
+
+        case IDM_TABSASSPACES:
+            settings.bTabsAsSpaces = !settings.bTabsAsSpaces;
+            ApplySettings(hwndSci, &settings);
+            SyncMenu(hwndFrame);
+            break;
+
+        /* --- File ---------------------------------------------------------- */
+        case IDM_REVERT:
+            if (szFileName[0] && ConfirmDiscard(hwnd)) {
+                CHAR szKeep[CCHMAXPATH];
+                strcpy(szKeep, szFileName);
+                LoadFile(hwnd, (PSZ)szKeep);
+                ShowStatus();
+                WinInvalidateRect(hwnd, NULL, TRUE);
+            }
             break;
 
         case IDM_EXIT:

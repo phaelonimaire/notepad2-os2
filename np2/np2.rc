@@ -9,6 +9,9 @@ BEGIN
         MENUITEM "~Open...\tCtrl+O", IDM_OPEN
         MENUITEM "~Save\tCtrl+S",    IDM_SAVE
         MENUITEM "Save ~as...",      IDM_SAVEAS
+        MENUITEM "Re~vert",          IDM_REVERT
+        MENUITEM SEPARATOR
+        MENUITEM "~Read Only",       IDM_READONLY
         MENUITEM SEPARATOR
         MENUITEM "E~xit", IDM_EXIT
     END
@@ -18,23 +21,107 @@ BEGIN
         MENUITEM "~Redo\tCtrl+Y",   IDM_REDO
         MENUITEM SEPARATOR
         MENUITEM "Cu~t\tCtrl+X",    IDM_CUT
-        MENUITEM "~Copy\tCtrl+C",   IDM_COPY
+        MENUITEM "Cop~y\tCtrl+C",   IDM_COPY
+        MENUITEM "Copy A~ll",        IDM_COPYALL
+        MENUITEM "Copy Ad~d",        IDM_COPYADD
         MENUITEM "~Paste\tCtrl+V",  IDM_PASTE
+        MENUITEM "Cle~ar",           IDM_CLEAR
+        MENUITEM "Clear Clip~board", IDM_CLEARCLIPBOARD
         MENUITEM SEPARATOR
-        MENUITEM "Select ~All\tCtrl+A", IDM_SELECTALL
+        MENUITEM "~Select All\tCtrl+A", IDM_SELECTALL
         MENUITEM SEPARATOR
-        SUBMENU "~Lines", IDM_LINES
+        SUBMENU "L~ines", IDM_LINES
         BEGIN
-            MENUITEM "~Modify Lines...", IDM_MODIFYLINES
-            MENUITEM "~Align Lines...",  IDM_ALIGNLINES
-            MENUITEM "~Sort Lines...",   IDM_SORTLINES
+            MENUITEM "Move ~Up\tCtrl+Shift+Up",     IDM_MOVELINEUP
+            MENUITEM "Move ~Down\tCtrl+Shift+Down", IDM_MOVELINEDOWN
+            MENUITEM "Duplicate ~Line\tCtrl+D",     IDM_DUPLICATELINE
+            MENUITEM "~Cut Line\tCtrl+L",           IDM_CUTLINE
+            MENUITEM "C~opy Line",                   IDM_COPYLINE
+            MENUITEM "D~elete Line\tCtrl+Shift+L",  IDM_DELETELINE
+            MENUITEM SEPARATOR
+            MENUITEM "~Split Lines",       IDM_SPLITLINES
+            MENUITEM "~Join Lines",        IDM_JOINLINES
+            MENUITEM "Join ~Paragraphs",   IDM_JOINPARAGRAPHS
+            MENUITEM SEPARATOR
+            MENUITEM "~Modify Lines...",   IDM_MODIFYLINES
+            MENUITEM "~Align Lines...",    IDM_ALIGNLINES
+            MENUITEM "So~rt Lines...",     IDM_SORTLINES
         END
-        MENUITEM "~Enclose Selection...",   IDM_ENCLOSESEL
-        /* "~X", not "~T": "Cu~t" already owns T in this menu, and an alphabetic
-           key "selects the FIRST menu item with the specified character as its
-           mnemonic key" [DOC-IBM - pmv2base.txt, menu keyboard behaviour], so a
-           duplicate simply never fires. Nothing in the toolchain warns. */
-        MENUITEM "Insert HTML/~XML Tag...", IDM_INSERTTAG
+        SUBMENU "Bloc~k", IDM_BLOCK
+        BEGIN
+            MENUITEM "~Indent\tTab",             IDM_INDENT
+            MENUITEM "~Unindent\tShift+Tab",     IDM_UNINDENT
+            MENUITEM "~Duplicate Selection",      IDM_SELDUPLICATE
+            MENUITEM "~Pad With Spaces",          IDM_PADWITHSPACES
+            MENUITEM SEPARATOR
+            MENUITEM "Strip ~First Character",    IDM_STRIP1STCHAR
+            MENUITEM "Strip ~Last Character",     IDM_STRIPLASTCHAR
+            MENUITEM "Strip ~Trailing Blanks",    IDM_TRIMLINES
+            MENUITEM "Compress ~Whitespace",      IDM_COMPRESSWS
+            MENUITEM SEPARATOR
+            MENUITEM "~Merge Blank Lines",        IDM_MERGEBLANKLINES
+            MENUITEM "~Remove Blank Lines",       IDM_REMOVEBLANKLINES
+        END
+        SUBMENU "~Enclose Selection", IDM_ENCLOSEMENU
+        BEGIN
+            MENUITEM "~With...",         IDM_ENCLOSESEL
+            MENUITEM SEPARATOR
+            MENUITEM "~( )",             IDM_ENCLOSE_PAREN
+            MENUITEM "~{ }",             IDM_ENCLOSE_BRACE
+            MENUITEM "~[ ]",             IDM_ENCLOSE_BRACKET
+            MENUITEM "~Single Quotes",   IDM_ENCLOSE_SQUOTE
+            MENUITEM "~Double Quotes",   IDM_ENCLOSE_DQUOTE
+            MENUITEM "~Backticks",       IDM_ENCLOSE_BACKTICK
+        END
+        SUBMENU "C~onvert", IDM_CONVERT
+        BEGIN
+            MENUITEM "~Uppercase\tCtrl+U",     IDM_UPPERCASE
+            MENUITEM "~Lowercase\tCtrl+Shift+U", IDM_LOWERCASE
+            MENUITEM "~Invert Case",            IDM_INVERTCASE
+            MENUITEM "Title ~Case",             IDM_TITLECASE
+            MENUITEM "~Sentence Case",          IDM_SENTENCECASE
+            MENUITEM SEPARATOR
+            MENUITEM "~Tabify Selection",       IDM_TABIFYSEL
+            MENUITEM "U~ntabify Selection",     IDM_UNTABIFYSEL
+            MENUITEM "Ta~bify Indent",          IDM_TABIFYINDENT
+            MENUITEM "Untabi~fy Indent",        IDM_UNTABIFYINDENT
+        END
+        SUBMENU "I~nsert", IDM_INSERTMENU
+        BEGIN
+            MENUITEM "HTML/~XML Tag...",        IDM_INSERTTAG
+            MENUITEM SEPARATOR
+            MENUITEM "Time/Date (~Short Form)", IDM_INSERT_TIMESHORT
+            MENUITEM "Time/Date (~Long Form)",  IDM_INSERT_TIMELONG
+            MENUITEM "~Filename",               IDM_INSERT_FILENAME
+            MENUITEM "~Path and Filename",      IDM_INSERT_PATHNAME
+        END
+        SUBMENU "Spe~cial", IDM_SPECIAL
+        BEGIN
+            MENUITEM "Line Comment (~Toggle)\tCtrl+Q", IDM_LINECOMMENT
+            MENUITEM "Stream C~omment",          IDM_STREAMCOMMENT
+            MENUITEM SEPARATOR
+            MENUITEM "URL ~Encode",              IDM_URLENCODE
+            MENUITEM "URL ~Decode",              IDM_URLDECODE
+            MENUITEM "Esca~pe C Chars",          IDM_ESCAPECCHARS
+            MENUITEM "~Unescape C Chars",        IDM_UNESCAPECCHARS
+            MENUITEM "C~har To Hex",             IDM_CHAR2HEX
+            MENUITEM "He~x To Char",             IDM_HEX2CHAR
+            MENUITEM SEPARATOR
+            MENUITEM "~Find Matching Brace\tCtrl+B",       IDM_FINDMATCHBRACE
+            MENUITEM "Se~lect To Matching Brace\tCtrl+Shift+B", IDM_SELTOMATCHBRACE
+            MENUITEM SEPARATOR
+            MENUITEM "Delete L~ine Left",        IDM_DELLINELEFT
+            MENUITEM "Delete Line Ri~ght",       IDM_DELLINERIGHT
+            MENUITEM "Delete ~Word Left\tCtrl+Backspace",  IDM_DELWORDLEFT
+            MENUITEM "Delete Word ~Right\tCtrl+Delete",    IDM_DELWORDRIGHT
+        END
+        SUBMENU "Book~marks", IDM_BOOKMARKS
+        BEGIN
+            MENUITEM "~Toggle\tCtrl+F2",        IDM_BOOKMARKTOGGLE
+            MENUITEM "Goto ~Next\tF2",          IDM_BOOKMARKNEXT
+            MENUITEM "Goto ~Previous\tShift+F2", IDM_BOOKMARKPREV
+            MENUITEM "~Clear All",               IDM_BOOKMARKCLEAR
+        END
     END
     SUBMENU "~Search", IDM_SEARCH
     BEGIN
@@ -47,11 +134,27 @@ BEGIN
     END
     SUBMENU "~View", IDM_VIEW
     BEGIN
-        MENUITEM "~Word Wrap",    IDM_WORDWRAP
-        MENUITEM "Line ~Numbers", IDM_LINENUMBERS
+        MENUITEM "~Word Wrap",             IDM_WORDWRAP
+        MENUITEM "~Long Line Marker",      IDM_LONGLINEMARKER
+        MENUITEM "Indentation ~Guides",    IDM_INDENTGUIDES
+        MENUITEM "Show W~hitespace",       IDM_SHOWWHITESPACE
+        MENUITEM "Show Line ~Endings",     IDM_SHOWEOLS
+        MENUITEM "Highlight C~urrent Line", IDM_HILITECURLINE
+        MENUITEM SEPARATOR
+        MENUITEM "Line ~Numbers",          IDM_LINENUMBERS
+        MENUITEM "Selection ~Margin",      IDM_SELMARGIN
+        MENUITEM "Code ~Folding",          IDM_FOLDING
+        MENUITEM "~Toggle All Folds",      IDM_TOGGLEFOLDS
+        MENUITEM SEPARATOR
+        MENUITEM "Zoom ~In\tCtrl+Plus",   IDM_ZOOMIN
+        MENUITEM "Zoom ~Out\tCtrl+Minus", IDM_ZOOMOUT
+        MENUITEM "~Reset Zoom",            IDM_RESETZOOM
     END
     SUBMENU "Se~ttings", IDM_SETTINGS
     BEGIN
+        MENUITEM "Insert Tabs as ~Spaces", IDM_TABSASSPACES
+        MENUITEM "Auto ~Indent Text",      IDM_AUTOINDENT
+        MENUITEM SEPARATOR
         MENUITEM "~Tab Settings...",       IDM_TABSETTINGS
         MENUITEM "~Long Line Settings...", IDM_LONGLINESET
         MENUITEM "~Word Wrap Settings...", IDM_WORDWRAPSET
