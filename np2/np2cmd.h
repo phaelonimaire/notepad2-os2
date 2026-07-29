@@ -46,4 +46,8 @@ void EditInsertString(HWND h, const char *psz);
 /* Clipboard */
 void EditCopyAppend(HWND h);
 
+/* Mark Occurrences - highlight every copy of the selected word.
+ * iMark: 0 = off, 1 = red, 2 = green, 3 = blue (Notepad2's numbering). */
+void EditMarkAll(HWND h, int iMark, BOOL bMatchCase, BOOL bMatchWords);
+
 #endif /* NP2CMD_H */

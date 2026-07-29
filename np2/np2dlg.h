@@ -52,4 +52,10 @@ BOOL EditAlignDlg(HWND hwndOwner, int *piAlignMode);
 BOOL EditSortDlg(HWND hwndOwner, HWND hwndEdit, int *piSortFlags);
 void EditAboutDlg(HWND hwndOwner);
 
+/* Notepad2's InfoBox: a message with a "Don't display this message again"
+ * checkbox. *pbSuppress is read (skip the box entirely if set) and written
+ * (set when the user ticks it). Pass NULL for a box that always shows. */
+void NP2InfoBox(HWND hwndOwner, const char *pszText, const char *pszCaption,
+                BOOL *pbSuppress);
+
 #endif /* NP2DLG_H */

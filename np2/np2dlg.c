@@ -659,3 +659,67 @@ void EditAboutDlg(HWND hwndOwner)
 {
     WinDlgBox(HWND_DESKTOP, hwndOwner, AboutDlgProc, NULLHANDLE, IDD_ABOUT, NULL);
 }
+
+/*--------------------------------------------------------------------------
+ * InfoBox - a message plus "Don't display this message again"
+ *
+ * Notepad2 persists the suppression flag in its .ini; this port keeps it in
+ * memory for the session, because settings persistence is not written yet.
+ * The checkbox therefore works but does not survive a restart - a smaller
+ * promise, kept, rather than a checkbox that silently does nothing.
+ *------------------------------------------------------------------------*/
+
+typedef struct _infoarg {
+    const char *pszText;
+    BOOL        bSuppress;
+} INFOARG;
+
+static MRESULT EXPENTRY InfoBoxDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    static INFOARG *pia;
+
+    switch (msg) {
+    case WM_INITDLG:
+        pia = (INFOARG *)PVOIDFROMMP(mp2);
+        WinSetDlgItemText(hwnd, IDC_INFOTEXT, (PSZ)pia->pszText);
+        PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
+        return (MRESULT)FALSE;
+
+    case WM_COMMAND:
+        if (SHORT1FROMMP(mp1) == DID_OK || SHORT1FROMMP(mp1) == DID_CANCEL) {
+            pia->bSuppress = Checked(hwnd, IDC_INFOSUPPRESS);
+            WinDismissDlg(hwnd, DID_OK);
+        }
+        return (MRESULT)0;
+    }
+    return WinDefDlgProc(hwnd, msg, mp1, mp2);
+}
+
+void NP2InfoBox(HWND hwndOwner, const char *pszText, const char *pszCaption,
+                BOOL *pbSuppress)
+{
+    INFOARG ia;
+
+    if (pbSuppress && *pbSuppress)
+        return;
+
+    ia.pszText  = pszText;
+    ia.bSuppress = FALSE;
+    if (WinDlgBox(HWND_DESKTOP, hwndOwner, InfoBoxDlgProc, NULLHANDLE,
+                  IDD_INFOBOX, &ia) == DID_ERROR) {
+        /* Say what failed. A dialog that silently does not appear is
+         * indistinguishable from a dead menu item. */
+        char szErr[192];
+        sprintf(szErr, "%s\n\n(InfoBox template %u failed to load - "
+                       "WinGetLastError = 0x%04lX)",
+                pszText, (unsigned)IDD_INFOBOX,
+                (unsigned long)WinGetLastError(WinQueryAnchorBlock(hwndOwner)));
+        WinMessageBox(HWND_DESKTOP, hwndOwner, (PSZ)szErr, (PSZ)pszCaption,
+                      0, MB_OK | MB_WARNING | MB_MOVEABLE);
+        return;
+    }
+    if (pbSuppress)
+        *pbSuppress = ia.bSuppress;
+
+    (void)pszCaption;   /* the template carries the caption */
+}

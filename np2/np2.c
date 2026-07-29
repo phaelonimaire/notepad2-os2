@@ -59,6 +59,16 @@ static BOOL bFoldsCollapsed = FALSE;
 static BOOL bAutoIndent     = TRUE;
 static BOOL bReadOnly       = FALSE;
 
+/* Mark Occurrences: 0 off, 1 red, 2 green, 3 blue (Notepad2's numbering). */
+static int  iMarkOccurrences  = 0;
+static BOOL bMarkOccCase      = FALSE;
+static BOOL bMarkOccWord      = FALSE;
+
+/* Session-scoped "don't show this again" flags. Not persisted - settings
+ * persistence is not written yet, and a checkbox that silently forgets is
+ * better than one that silently does nothing. */
+static BOOL bSuppressEOLChanged = FALSE;
+
 /* Commands that are nothing but a Scintilla message. Keeping them in a table
  * rather than the switch is the difference between a readable dispatch and
  * eighty near-identical cases. */
@@ -308,6 +318,25 @@ static void ApplyView(void)
     Sci(SCI_SETREADONLY,   MPFROMLONG(bReadOnly), 0);
 }
 
+/* Line endings. SCI_SETEOLMODE changes what NEW lines use; SCI_CONVERTEOLS
+ * rewrites the ones already there. Notepad2 does both, and doing only the
+ * first is the classic half-fix: the file looks unchanged until you type. */
+static void SetEOLMode(HWND hwnd, LONG mode)
+{
+    LONG cur = LONGFROMMR(Sci(SCI_GETEOLMODE, 0, 0));
+    if (cur == mode)
+        return;
+    Sci(SCI_BEGINUNDOACTION, 0, 0);
+    Sci(SCI_SETEOLMODE, MPFROMLONG(mode), 0);
+    Sci(SCI_CONVERTEOLS, MPFROMLONG(mode), 0);
+    Sci(SCI_ENDUNDOACTION, 0, 0);
+    NP2InfoBox(hwnd,
+        mode == SC_EOL_CRLF ? "Line endings converted to Windows (CR+LF)." :
+        mode == SC_EOL_LF   ? "Line endings converted to Unix (LF)." :
+                              "Line endings converted to Mac (CR).",
+        "Line Endings", &bSuppressEOLChanged);
+}
+
 /* Bookmarks ride on marker 1, clear of SC_MASK_FOLDERS. */
 #define NP2_BOOKMARK 1
 
@@ -379,6 +408,29 @@ static void SyncMenu(HWND hwndFrame)
                        MPFROM2SHORT(aChecks[i].id, TRUE),
                        MPFROM2SHORT(MIA_CHECKED, *aChecks[i].pf ? MIA_CHECKED : 0));
     }
+
+    /* Radio groups. PM has no CheckMenuRadioItem - tick one, clear the rest. */
+    {
+        LONG eol = LONGFROMMR(Sci(SCI_GETEOLMODE, 0, 0));
+        /* Indexed by SC_EOL_* VALUE, not by menu order: the constants are
+         * CRLF=0, CR=1, LF=2, so listing them in menu order puts the check
+         * mark on the wrong item. */
+        USHORT aEol[3] = { IDM_EOL_CRLF, IDM_EOL_CR, IDM_EOL_LF };
+        USHORT aMark[4] = { IDM_MARKOCC_OFF, IDM_MARKOCC_RED,
+                            IDM_MARKOCC_GREEN, IDM_MARKOCC_BLUE };
+        int i;
+        for (i = 0; i < 3; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR, MPFROM2SHORT(aEol[i], TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, (eol == i) ? MIA_CHECKED : 0));
+        for (i = 0; i < 4; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR, MPFROM2SHORT(aMark[i], TRUE),
+                       MPFROM2SHORT(MIA_CHECKED,
+                                    (iMarkOccurrences == i) ? MIA_CHECKED : 0));
+        WinSendMsg(hwndMenu, MM_SETITEMATTR, MPFROM2SHORT(IDM_MARKOCC_CASE, TRUE),
+                   MPFROM2SHORT(MIA_CHECKED, bMarkOccCase ? MIA_CHECKED : 0));
+        WinSendMsg(hwndMenu, MM_SETITEMATTR, MPFROM2SHORT(IDM_MARKOCC_WORD, TRUE),
+                   MPFROM2SHORT(MIA_CHECKED, bMarkOccWord ? MIA_CHECKED : 0));
+    }
 }
 
 MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
@@ -436,6 +488,18 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
      * menu, and the menu then renders normally but ignores every mnemonic - the
      * keystrokes land in the editor instead. Focus is set once at WM_CREATE and again
      * after a command completes, which is enough. [OBS-RE] */
+
+    /* Scintilla reports through WM_CONTROL, with the SCNotification in mp2
+     * [scintilla/os2/ScintillaPM.cxx NotifyParent]. SCN_UPDATEUI fires on every
+     * caret or selection change, which is exactly when the occurrence marks
+     * need recomputing. */
+    case WM_CONTROL:
+        if (SHORT1FROMMP(mp1) == 2000 && iMarkOccurrences) {
+            SCNotification *pscn = (SCNotification *)PVOIDFROMMP(mp2);
+            if (pscn && pscn->nmhdr.code == SCN_UPDATEUI)
+                EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
+        }
+        return (MRESULT)0;
 
     case WM_COMMAND: {
         HWND hwndFrame = WinQueryWindow(hwnd, QW_PARENT);
@@ -710,6 +774,31 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         case IDM_TABSASSPACES:
             settings.bTabsAsSpaces = !settings.bTabsAsSpaces;
             ApplySettings(hwndSci, &settings);
+            SyncMenu(hwndFrame);
+            break;
+
+        /* --- Line endings -------------------------------------------------- */
+        case IDM_EOL_CRLF: SetEOLMode(hwnd, SC_EOL_CRLF); SyncMenu(hwndFrame); break;
+        case IDM_EOL_LF:   SetEOLMode(hwnd, SC_EOL_LF);   SyncMenu(hwndFrame); break;
+        case IDM_EOL_CR:   SetEOLMode(hwnd, SC_EOL_CR);   SyncMenu(hwndFrame); break;
+
+        /* --- Mark Occurrences ---------------------------------------------- */
+        case IDM_MARKOCC_OFF:
+        case IDM_MARKOCC_RED:
+        case IDM_MARKOCC_GREEN:
+        case IDM_MARKOCC_BLUE:
+            iMarkOccurrences = idCmd - IDM_MARKOCC_OFF;
+            EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
+            SyncMenu(hwndFrame);
+            break;
+        case IDM_MARKOCC_CASE:
+            bMarkOccCase = !bMarkOccCase;
+            EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
+            SyncMenu(hwndFrame);
+            break;
+        case IDM_MARKOCC_WORD:
+            bMarkOccWord = !bMarkOccWord;
+            EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
             SyncMenu(hwndFrame);
             break;
 

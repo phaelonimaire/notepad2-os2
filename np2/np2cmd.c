@@ -795,3 +795,85 @@ void EditCopyAppend(HWND h)
 
     free(sel); free(pOld); free(combined);
 }
+
+/*--------------------------------------------------------------------------
+ * Mark Occurrences - converted from Edit.c's EditMarkAll.
+ *
+ * Driven from SCN_UPDATEUI so the marks follow the selection. Indicator 1 is
+ * used throughout; the colour formula is Notepad2's own, and it is correct
+ * against Scintilla's 0xBBGGRR order once you know the index order is
+ * 1=red, 2=green, 3=blue.
+ *------------------------------------------------------------------------*/
+
+void EditMarkAll(HWND h, int iMark, BOOL bMatchCase, BOOL bMatchWords)
+{
+    struct Sci_TextToFind ttf;
+    LONG  iPos, iTextLen, iSelStart, iSelEnd, iSelCount;
+    char *pszText;
+    int   iMatches = 0;
+
+    iTextLen = SciL(h, SCI_GETLENGTH, 0);
+
+    /* Always clear first, so switching the feature off actually clears. */
+    SciL(h, SCI_SETINDICATORCURRENT, 1);
+    SciMsg(h, SCI_INDICATORCLEARRANGE, 0, (const void *)iTextLen);
+
+    if (!iMark)
+        return;
+
+    iSelStart = SciL(h, SCI_GETSELECTIONSTART, 0);
+    iSelEnd   = SciL(h, SCI_GETSELECTIONEND, 0);
+    iSelCount = iSelEnd - iSelStart;
+
+    /* Nothing selected, or a multi-line selection - nothing to mark. */
+    if (iSelCount <= 0 ||
+        SciL(h, SCI_LINEFROMPOSITION, iSelStart) != SciL(h, SCI_LINEFROMPOSITION, iSelEnd))
+        return;
+
+    pszText = (char *)malloc(iSelCount + 1);
+    if (!pszText)
+        return;
+    {
+        struct Sci_TextRange tr;
+        tr.chrg.cpMin = iSelStart;
+        tr.chrg.cpMax = iSelEnd;
+        tr.lpstrText  = pszText;
+        SciP(h, SCI_GETTEXTRANGE, 0, &tr);
+        pszText[iSelCount] = '\0';
+    }
+
+    /* With whole-words on, a selection containing punctuation is not a word. */
+    if (bMatchWords) {
+        LONG i;
+        for (i = 0; pszText[i]; i++) {
+            if (strchr(" \t\r\n@#$%^&*~-=+()[]{}\\/:;'\"", pszText[i])) {
+                free(pszText);
+                return;
+            }
+        }
+    }
+
+    memset(&ttf, 0, sizeof(ttf));
+    ttf.chrg.cpMin = 0;
+    ttf.chrg.cpMax = iTextLen;
+    ttf.lpstrText  = pszText;
+
+    SciMsg(h, SCI_INDICSETALPHA, 1, (const void *)100);
+    SciMsg(h, SCI_INDICSETFORE,  1, (const void *)(LONG)(0xffL << ((iMark - 1) << 3)));
+    SciMsg(h, SCI_INDICSETSTYLE, 1, (const void *)INDIC_ROUNDBOX);
+
+    /* The 2000 cap is Notepad2's, and it matters: this runs on every caret
+     * move, so an unbounded scan on a large file would make typing crawl. */
+    while ((iPos = SciP(h, SCI_FINDTEXT,
+                        (bMatchCase ? SCFIND_MATCHCASE : 0) |
+                        (bMatchWords ? SCFIND_WHOLEWORD : 0), &ttf)) != -1
+           && ++iMatches < 2000) {
+        SciMsg(h, SCI_INDICATORFILLRANGE, iPos, (const void *)iSelCount);
+        ttf.chrg.cpMin = iPos + iSelCount;
+        ttf.chrg.cpMax = iTextLen;
+        if (ttf.chrg.cpMin >= ttf.chrg.cpMax)
+            break;
+    }
+
+    free(pszText);
+}

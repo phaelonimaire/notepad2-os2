@@ -228,3 +228,23 @@
 /* Settings */
 #define IDM_TABSASSPACES    340
 #define IDM_AUTOINDENT      341
+
+/* Line endings */
+#define IDM_EOL_CRLF        350
+#define IDM_EOL_LF          351
+#define IDM_EOL_CR          352
+#define IDM_EOL_MENU        353
+
+/* Mark Occurrences */
+#define IDM_MARKOCC_MENU    360
+#define IDM_MARKOCC_OFF     361
+#define IDM_MARKOCC_RED     362
+#define IDM_MARKOCC_GREEN   363
+#define IDM_MARKOCC_BLUE    364
+#define IDM_MARKOCC_CASE    365
+#define IDM_MARKOCC_WORD    366
+
+/* Reusable info box with "don't display again" */
+#define IDD_INFOBOX         540
+#define IDC_INFOTEXT        780
+#define IDC_INFOSUPPRESS    781

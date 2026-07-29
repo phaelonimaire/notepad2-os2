@@ -12,6 +12,12 @@ BEGIN
         MENUITEM "Re~vert",          IDM_REVERT
         MENUITEM SEPARATOR
         MENUITEM "~Read Only",       IDM_READONLY
+        SUBMENU "Line Endin~gs", IDM_EOL_MENU
+        BEGIN
+            MENUITEM "~Windows (CR+LF)", IDM_EOL_CRLF
+            MENUITEM "~Unix (LF)",       IDM_EOL_LF
+            MENUITEM "~Mac (CR)",        IDM_EOL_CR
+        END
         MENUITEM SEPARATOR
         MENUITEM "E~xit", IDM_EXIT
     END
@@ -140,6 +146,16 @@ BEGIN
         MENUITEM "Show W~hitespace",       IDM_SHOWWHITESPACE
         MENUITEM "Show Line ~Endings",     IDM_SHOWEOLS
         MENUITEM "Highlight C~urrent Line", IDM_HILITECURLINE
+        SUBMENU "Mar~k Occurrences", IDM_MARKOCC_MENU
+        BEGIN
+            MENUITEM "~Off",                    IDM_MARKOCC_OFF
+            MENUITEM "~Red",                    IDM_MARKOCC_RED
+            MENUITEM "~Green",                  IDM_MARKOCC_GREEN
+            MENUITEM "~Blue",                   IDM_MARKOCC_BLUE
+            MENUITEM SEPARATOR
+            MENUITEM "Match ~Case",             IDM_MARKOCC_CASE
+            MENUITEM "Match ~Whole Words Only", IDM_MARKOCC_WORD
+        END
         MENUITEM SEPARATOR
         MENUITEM "Line ~Numbers",          IDM_LINENUMBERS
         MENUITEM "Selection ~Margin",      IDM_SELMARGIN
@@ -330,6 +346,16 @@ BEGIN
 
         DEFPUSHBUTTON "OK",     DID_OK,     220, 148, 56, 14
         PUSHBUTTON    "Cancel", DID_CANCEL, 220, 130, 56, 14
+    END
+END
+
+DLGTEMPLATE IDD_INFOBOX
+BEGIN
+    DIALOG "Notepad2", IDD_INFOBOX, 20, 20, 300, 96, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT "", IDC_INFOTEXT, 12, 60, 276, 24
+        AUTOCHECKBOX "~Don't display this message again", IDC_INFOSUPPRESS, 12, 40, 200, 10
+        DEFPUSHBUTTON "OK", DID_OK, 124, 12, 52, 14
     END
 END
 
