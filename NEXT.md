@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 102 (~42%) |
+| Menu commands | 245 | 115 (~47%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | ~4,200 lines |
 
@@ -24,9 +24,9 @@ look impossible. Sized honestly:
 
 | Remaining | Needs | Size |
 |---|---|---|
-| **Line Endings** (4 cmds) | `SCI_SETEOLMODE` + `SCI_CONVERTEOLS`. No encoding involved | **Trivial** — an afternoon |
-| **Mark Occurrences** (6) | `SCI_INDICSETSTYLE` / `SETINDICATORCURRENT` / `INDICATORFILLRANGE`; `EditMarkAll` in `Edit.c` ports directly | **Small** |
-| **Info Box** ×3 | A message box plus a "don't show again" checkbox | **Trivial** |
+| ~~Line Endings~~ | **Done** — commit `1d75221` | |
+| ~~Mark Occurrences~~ | **Done** — same commit | |
+| ~~Info Box~~ | **Done** — `NP2InfoBox`, session-scoped suppression | |
 | **Launch / Run** (7) | `DosStartSession` / `DosExecPgm` (`os2ref/session-manager.md`) | **Small** |
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
 | **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
@@ -123,6 +123,12 @@ wrc np2.res np2.exe
 - Bookmarks live on marker 1, deliberately clear of `SC_MASK_FOLDERS` so folding can use 2.
 - Case conversion, tabify/untabify and the hex commands are byte-oriented like the rest of the
   port; `UniTransUpper`/`UniTransLower` is the locale-correct route and belongs with step 5.
+- This Scintilla build defaults to **`SC_EOL_LF`**, not CRLF — so "convert to Unix" on a fresh
+  document is correctly a no-op, which looks like a dead menu item until you check.
+- `SC_EOL_*` is CRLF=0, **CR=1, LF=2** — not menu order. Any array indexed by it must follow the
+  constant, not the display order.
+- `NP2InfoBox` suppression is session-scoped. When settings persistence lands it should move into
+  the same store as everything else.
 
 ### Conversion notes for whoever does the next batch
 
