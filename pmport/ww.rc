@@ -1,0 +1,34 @@
+#include <os2.h>
+#include "ww.h"
+
+MENU IDD_WWMAIN
+BEGIN
+    SUBMENU "~File", IDM_FILE
+    BEGIN
+        MENUITEM "~Word Wrap Settings...", IDM_WW
+        MENUITEM SEPARATOR
+        MENUITEM "E~xit",                  IDM_EXIT
+    END
+END
+
+/* wrc is a Windows *and* OS/2 resource compiler, and the bare COMBOBOX statement
+   produced a template PM rejected with PMERR_INVALID_HWND (0x1001) at WinDlgBox time.
+   The generic CONTROL statement with the explicit PM class WC_COMBOBOX works. [OBS-RE]
+
+   NOTE: a COMBOBOX's cy covers the entry field PLUS the dropped-down list, so the
+   entry field renders at the TOP of the control rectangle. Each combo below is
+   placed 50 units lower than its label so their entry fields line up. */
+DLGTEMPLATE IDD_WORDWRAP
+BEGIN
+    DIALOG "Word Wrap Settings", IDD_WORDWRAP, 25, 25, 240, 150, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT    "Indent:",       -1,             10, 128, 70, 10
+        CONTROL  "", IDC_CB_INDENT,               85,  78, 145, 60, WC_COMBOBOX, CBS_DROPDOWNLIST | WS_VISIBLE | WS_TABSTOP
+        LTEXT    "Wrap symbol:",  -1,             10, 105, 70, 10
+        CONTROL  "", IDC_CB_SYMBOL,               85,  55, 145, 60, WC_COMBOBOX, CBS_DROPDOWNLIST | WS_VISIBLE | WS_TABSTOP
+        LTEXT    "Wrap mode:",    -1,             10,  82, 70, 10
+        CONTROL  "", IDC_CB_MODE,                 85,  32, 145, 60, WC_COMBOBOX, CBS_DROPDOWNLIST | WS_VISIBLE | WS_TABSTOP
+        DEFPUSHBUTTON "OK",     DID_OK,           70,   8, 50, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL,      135,   8, 50, 14
+    END
+END

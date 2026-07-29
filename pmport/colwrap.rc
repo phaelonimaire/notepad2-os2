@@ -1,0 +1,23 @@
+#include <os2.h>
+#include "colwrap.h"
+
+MENU IDD_MAINWIN
+BEGIN
+    SUBMENU "~File", IDM_FILE
+    BEGIN
+        MENUITEM "~Column Wrap...", IDM_WRAP
+        MENUITEM SEPARATOR
+        MENUITEM "E~xit",           IDM_EXIT
+    END
+END
+
+DLGTEMPLATE IDD_COLUMNWRAP
+BEGIN
+    DIALOG "Column Wrap", IDD_COLUMNWRAP, 30, 30, 180, 62, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT         "Wrap at column:", -1,             8, 42, 90, 10
+        ENTRYFIELD    "", IDC_COLUMNWRAP,              100, 42, 60, 10, ES_MARGIN
+        DEFPUSHBUTTON "OK",     DID_OK,                 30, 10, 50, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL,             95, 10, 50, 14
+    END
+END

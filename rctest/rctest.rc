@@ -1,0 +1,31 @@
+#include <os2.h>
+#include "res.h"
+
+MENU ID_MAINWIN
+BEGIN
+    SUBMENU "~File", IDM_FILE
+    BEGIN
+        MENUITEM "~Open...",  IDM_OPEN
+        MENUITEM SEPARATOR
+        MENUITEM "E~xit",     IDM_EXIT
+    END
+    SUBMENU "~Help", IDM_HELP
+    BEGIN
+        MENUITEM "~About...", IDM_ABOUT
+    END
+END
+
+DLGTEMPLATE ID_ABOUTDLG
+BEGIN
+    DIALOG "About", ID_ABOUTDLG, 40, 40, 200, 80, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        CTEXT           "Resources loaded from a .RC", -1, 5, 52, 190, 10
+        CTEXT           "menu + dialog + stringtable", -1, 5, 40, 190, 10
+        DEFPUSHBUTTON   "OK", DID_OK, 75, 12, 50, 14
+    END
+END
+
+STRINGTABLE
+BEGIN
+    IDS_TITLE   "Loaded from STRINGTABLE"
+END
