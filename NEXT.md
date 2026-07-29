@@ -1,6 +1,6 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-07-29 (Find/Replace, ten dialogs, then the command surface).
+Checkpoint: 2026-07-29 (Find/Replace, ten dialogs, the command surface, syntax highlighting).
 
 ## Where this stands
 
@@ -10,7 +10,7 @@ The **platform layer is done**; the **application is not**.
 |---|---|---|
 | Menu commands | 245 | 137 (~56%) |
 | Dialogs | 27 | 13 |
-| App-layer code | 26,796 lines | ~4,200 lines |
+| App-layer code | 26,796 lines | 5,560 lines |
 
 The 143 commands still missing are whole menus rather than scattered gaps, and the text-editing
 surface itself is essentially complete. See "What is left" below for what each actually requires —
@@ -31,7 +31,8 @@ look impossible. Sized honestly:
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
 | **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
 | **Toolbar / statusbar** | No PM control classes for these — compose from `WC_STATIC` and owner-drawn buttons | **Medium** |
-| **Scheme editor** | Needs settings persistence first; the schemes themselves are done | **Medium** |
+| **Settings persistence** | An app-owned text `.ini` beside the `.EXE`, read at start and written on exit. **Three features already wait on it** — syntax schemes, `NP2InfoBox` suppression, window position — so this is the highest-leverage medium item, not the dullest | **Medium** |
+| **Scheme editor** | Settings persistence first; the schemes themselves are done | **Medium** |
 | **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
 | **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
 
@@ -44,7 +45,8 @@ portable translation units compile unmodified. All of it verified on screen, not
 undo, word wrap, line numbers, and Find / Replace with match-case / whole-word / word-start / regex,
 Replace All, In Selection, a search MRU and F3 repeat. Go To Line; Modify Lines with `$(...)`
 numbering, Align, Sort (byte or logical, dedup, shuffle), Enclose Selection and Insert Tag; and
-Settings for tabs, long lines and word wrap.
+Settings for tabs, long lines and word wrap; and **syntax highlighting** — 21 schemes selected
+automatically from the file extension, with `View > Default Font` through `WinFontDlg`.
 
 Plus the full command surface: Lines (move/duplicate/cut/copy/delete, split, join, join paragraphs),
 Block (indent, pad, strip first/last char, trim, compress whitespace, merge/remove blank lines),
@@ -52,7 +54,8 @@ Enclose shortcuts, Convert (five case modes, tabify/untabify by selection or ind
 (date/time, filename, path), Special (line/stream comment, URL and C escaping, char↔hex, matching
 brace, delete line/word left/right), Bookmarks, and the View toggles with zoom.
 
-What is genuinely missing is **syntax highlighting and encodings** — not more editing commands.
+What is genuinely missing now is **encodings**, a **file browser**, and **settings persistence** —
+not editing commands, and no longer highlighting.
 
 ## Build
 
@@ -123,6 +126,15 @@ wrc np2.res np2.exe
 
    Genuinely absent, so design around them: `SHAutoComplete` (no alternative) and the tray
    (WarpCenter has none; XWorkplace's taskbar does, which would be an add-on dependency).
+
+### Suggested order from here
+
+1. **Settings persistence** — smallest thing with the largest unlock; three features are waiting.
+2. **Launch / Run** — `DosStartSession`, an afternoon.
+3. **Encoding / Reload** — `UniUconv`; also makes sort and alignment character-correct and enables
+   `\uXXXX` in Find/Replace.
+4. **Toolbar / statusbar** — the statusbar is the more useful half (line/column, encoding, scheme).
+5. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control.
 
 ### Command-surface notes
 
