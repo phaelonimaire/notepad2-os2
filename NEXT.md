@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 115 (~47%) |
+| Menu commands | 245 | 137 (~56%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | ~4,200 lines |
 
@@ -31,7 +31,7 @@ look impossible. Sized honestly:
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
 | **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
 | **Toolbar / statusbar** | No PM control classes for these — compose from `WC_STATIC` and owner-drawn buttons | **Medium** |
-| **`Styles.c`** (5,169 lines) | Scintilla styling wired to an OS/2 font and colour story. Lexers already compiled and linked | **Large** |
+| **Scheme editor** | Needs settings persistence first; the schemes themselves are done | **Medium** |
 | **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
 | **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
 
@@ -60,13 +60,17 @@ What is genuinely missing is **syntax highlighting and encodings** — not more 
 # on the OS/2 box - see the toolkit's recipes/build-pm-app.md
 export EMXOMFLD_TYPE=wlink EMXOMFLD_LINKER=wl.exe
 
-# Scintilla core + lexers (once)
-cd scintilla && for f in src/*.cxx lexlib/*.cxx lexers/*.cxx; do
-    g++ -std=c++11 -O1 -c -Iinclude -Ilexlib -Isrc "$f" -o "/tmp/obj/$(basename $f .cxx).o"; done
+# Scintilla core + lexers (once).  -DSCI_LEXER IS REQUIRED - see below.
+cd scintilla && for f in src/*.cxx lexlib/*.cxx; do
+    g++ -std=c++11 -DSCI_LEXER -O1 -c -Iinclude -Ilexlib -Isrc "$f" \
+        -o "/tmp/obj/$(basename $f .cxx).o"; done
+for f in lexers/*.cxx; do
+    g++ -std=c++11 -O1 -c -Iinclude -Ilexlib -Isrc "$f" \
+        -o "/tmp/objlex/$(basename $f .cxx).o"; done
 
 # platform layer
-g++ -std=c++11 -c -Iinclude -Ilexlib -Isrc os2/PlatPM.cxx     -o /tmp/platpm.o
-g++ -std=c++11 -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
+g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/PlatPM.cxx     -o /tmp/platpm.o
+g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
 
 # the app
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
@@ -74,6 +78,12 @@ g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
     np2.c np2find.c np2edit.c np2dlg.c np2cmd.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe
 ```
+
+> **`-DSCI_LEXER` is not optional, and omitting it fails silently.** `case SCI_SETLEXER` lives
+> inside `#ifdef SCI_LEXER` in `ScintillaBase.cxx`. Without the define, all 106 lexer objects still
+> compile, still link, `Catalogue.o` still links, `SCI_SETLEXER` still returns cleanly — and every
+> file renders in the default style with no error anywhere. The tell is `SCI_GETLEXER` returning 0
+> after you set it to something else.
 
 ## Next steps, in order
 
@@ -83,10 +93,10 @@ wrc np2.res np2.exe
 ~~3. Bulk-convert the self-contained dialogs.~~ **Done** — `np2/np2dlg.c` + `np2/np2edit.c`,
    commit `1bb2fe2`. Everything still unconverted is blocked on one of the subsystems below.
 
-4. **`Styles.c` (5,169 lines)** — syntax-highlighting schemes, and the largest single win left:
-   the lexers are already compiled and linked, so this is what turns the port into a *programmer's*
-   editor. Needs Scintilla styling wired to an OS/2 font and colour story, then unblocks the two
-   Style dialogs.
+~~4. `Styles.c` — syntax highlighting.~~ **Done** — `np2/np2style.c`, commit `3395f74`. 21 schemes
+   auto-detected from the file extension, plus `View > Default Font` through `WinFontDlg`.
+   Still open from that area: the **scheme editor** (`IDD_STYLECONFIG` / `IDD_STYLESELECT`), which
+   needs settings persistence first — schemes are compiled in today.
 5. **Encoding conversion.** (Line *endings* are not part of this — they are `SCI_SETEOLMODE` /
    `SCI_CONVERTEOLS` and need nothing new; do them first, they are an afternoon.) Runs straight
    into the three independent code pages
