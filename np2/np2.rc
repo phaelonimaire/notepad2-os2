@@ -1,0 +1,63 @@
+#include <os2.h>
+#include "np2.h"
+
+MENU IDD_NP2MAIN
+BEGIN
+    SUBMENU "~File", IDM_FILE
+    BEGIN
+        MENUITEM "~New",       IDM_NEW
+        MENUITEM "~Open...",   IDM_OPEN
+        MENUITEM "Save ~as...", IDM_SAVEAS
+        MENUITEM SEPARATOR
+        MENUITEM "E~xit", IDM_EXIT
+    END
+    SUBMENU "~Edit", IDM_EDIT
+    BEGIN
+        MENUITEM "~Undo",       IDM_UNDO
+        MENUITEM "~Redo",       IDM_REDO
+        MENUITEM SEPARATOR
+        MENUITEM "Cu~t",        IDM_CUT
+        MENUITEM "~Copy",       IDM_COPY
+        MENUITEM "~Paste",      IDM_PASTE
+        MENUITEM SEPARATOR
+        MENUITEM "Select ~All", IDM_SELECTALL
+    END
+    SUBMENU "~View", IDM_VIEW
+    BEGIN
+        MENUITEM "~Word Wrap",       IDM_WORDWRAP
+        MENUITEM "Line ~Numbers",    IDM_LINENUMBERS
+        MENUITEM SEPARATOR
+        MENUITEM "~Long Line Column...", IDM_COLWRAP
+    END
+END
+
+DLGTEMPLATE IDD_COLUMNWRAP
+BEGIN
+    DIALOG "Long Line Column", IDD_COLUMNWRAP, 30, 30, 180, 62, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT         "Mark column:", -1,              8, 42, 90, 10
+        ENTRYFIELD    "", IDC_COLUMNWRAP,            100, 42, 60, 10, ES_MARGIN
+        DEFPUSHBUTTON "OK",     DID_OK,               30, 10, 50, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL,           95, 10, 50, 14
+    END
+END
+
+/* Accelerators. The frame processes these BEFORE the focus window sees the key, which
+   is what makes Ctrl+C/V work while the Scintilla child holds focus and consumes
+   WM_CHAR itself. AF_CHAR + AF_CONTROL per os2ref/resources-and-dialogs.md 9. */
+ACCELTABLE IDD_NP2MAIN
+BEGIN
+    "a", IDM_SELECTALL, CHAR, CONTROL
+    "c", IDM_COPY,      CHAR, CONTROL
+    "v", IDM_PASTE,     CHAR, CONTROL
+    "x", IDM_CUT,       CHAR, CONTROL
+    "z", IDM_UNDO,      CHAR, CONTROL
+
+    /* The traditional OS/2 CUA editing keys. IBM documents these for entry fields and
+       MLEs [DOC-IBM - pmv2base.txt]: Ctrl+Insert copies, Shift+Insert pastes,
+       Shift+Delete cuts. Form follows IBM's own accelerator example
+       (pmv2base.txt "Creating an Accelerator-Table Resource"). */
+    VK_INSERT, IDM_COPY,  VIRTUALKEY, CONTROL
+    VK_INSERT, IDM_PASTE, VIRTUALKEY, SHIFT
+    VK_DELETE, IDM_CUT,   VIRTUALKEY, SHIFT
+END
