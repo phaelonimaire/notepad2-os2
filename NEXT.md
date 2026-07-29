@@ -1,6 +1,6 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-07-29.
+Checkpoint: 2026-07-29 (Find/Replace landed).
 
 ## Where this stands
 
@@ -8,17 +8,19 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 17 (~7%) |
-| Dialogs | 27 | 1 |
-| App-layer code | 26,796 lines | 372 lines |
+| Menu commands | 245 | 23 (~9%) |
+| Dialogs | 27 | 3 |
+| App-layer code | 26,796 lines | ~1,000 lines |
 
 `scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
 `ListBox`, `Menu`, `ElapsedTime`, `DynamicLibrary`, the `Platform` statics, and `ScintillaPM.cxx` —
 the control itself, with scroll bars, clipboard, and PM-timer fine tickers. Scintilla's 144
 portable translation units compile unmodified. All of it verified on screen, not just at `-Wall`.
 
-`np2/` is a working editor: open, edit, save (byte-exact), clipboard, undo, word wrap, line numbers,
-one converted dialog. It is a demo of the approach, not a Notepad2.
+`np2/` is a working editor: open, edit, save (byte-exact) with an unsaved-changes guard, clipboard,
+undo, word wrap, line numbers, and Find / Replace with match-case / whole-word / word-start / regex,
+Replace All, In Selection, a search MRU and F3 repeat. It is no longer only a demo, but it is a long
+way from Notepad2.
 
 ## Build
 
@@ -37,20 +39,21 @@ g++ -std=c++11 -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
 # the app
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
-    np2.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o -o np2.exe
+    np2.c np2find.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe
 ```
 
 ## Next steps, in order
 
-1. **Find / Replace.** The cheapest real win — one dialog against Scintilla's own
-   `SCI_FINDTEXT`/`SCI_SEARCHINTARGET`, no new platform work. Moves this from demo to tool.
-2. **Save (not just Save as)** reusing the current filename, and a modified-flag check before
-   New/Open (`SCI_GETMODIFY`, and the `SCI_SETSAVEPOINT` calls already in place).
+~~1. Find / Replace.~~ **Done** — `np2/np2find.c`, commit `8270e1d`.
+~~2. Save + modified-flag check.~~ **Done** — same commit.
+
 3. **Bulk-convert the remaining dialogs** in `src/Dialogs.c`. Now mechanical: 12 of its 13 Win32
    APIs map one-to-one, and the traps are documented in the toolkit's
-   `recipes/porting-a-windows-app.md`. Watch `WM_INITDLG`'s inverted return and use `CONTROL` with
-   an explicit `WC_*` class for anything past text and buttons.
+   `recipes/porting-a-windows-app.md`. Watch `WM_INITDLG`'s inverted return, use `CONTROL` with an
+   explicit `WC_*` class for composite controls (`AUTOCHECKBOX` shorthand is fine), lay the
+   coordinates out fresh rather than converting the Win32 y values, and strip `~` from `LTEXT`
+   labels — a static has no mnemonic and draws the tilde literally.
 4. **`Styles.c` (5,169 lines)** — syntax-highlighting schemes. Needs Scintilla styling wired to an
    OS/2 font and colour story; the lexers are already compiled and available.
 5. **Encoding / line-ending conversion.** Runs straight into the three independent code pages
@@ -74,3 +77,5 @@ wrc np2.res np2.exe
   exercised — no mouse injection available. Keyboard-driven scrolling is verified.
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
+- Find/Replace does not transform `\uXXXX` above 255 (needs `UniUconv` against the editor's code
+  page — see step 5), and Notepad2's `^c` "replace with clipboard" token is not wired up.
