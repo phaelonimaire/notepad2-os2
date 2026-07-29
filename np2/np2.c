@@ -18,6 +18,7 @@
 
 #include "Scintilla.h"
 #include "np2.h"
+#include "np2find.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -30,6 +31,10 @@ static SHORT sEdgeColumn  = 80;
 static CHAR szFileName[CCHMAXPATH] = "";
 static CHAR szStatus[256] = "";
 static HWND hwndFrameGlobal = NULLHANDLE;
+
+/* Search state persists across dialog invocations, as it does in Notepad2 -
+ * F3 must repeat the last search with the dialog closed. */
+static EDITFINDREPLACE efrData;
 
 /* The client area is entirely covered by the editor, so status goes in the title bar -
    which is also where a real editor shows the current file. */
@@ -172,6 +177,43 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile)
     return TRUE;
 }
 
+/* Save to the current file if there is one, otherwise fall through to Save as.
+ * Returns TRUE if the document is now on disk. */
+static BOOL DoSave(HWND hwnd, BOOL bForceSaveAs)
+{
+    CHAR szPick[CCHMAXPATH];
+
+    if (!bForceSaveAs && szFileName[0])
+        return SaveFile(hwnd, (PSZ)szFileName);
+
+    if (!PickFile(hwnd, TRUE, (PSZ)szPick))
+        return FALSE;
+    return SaveFile(hwnd, (PSZ)szPick);
+}
+
+/* Ask before discarding unsaved work. SCI_GETMODIFY tracks against the save
+ * point set by LoadFile/SaveFile, so this is accurate rather than a guess.
+ * Returns FALSE if the user cancelled and the caller must abandon its action. */
+static BOOL ConfirmDiscard(HWND hwnd)
+{
+    CHAR   szMsg[CCHMAXPATH + 64];
+    ULONG  ulReply;
+
+    if (!LONGFROMMR(Sci(SCI_GETMODIFY, 0, 0)))
+        return TRUE;
+
+    sprintf(szMsg, "%s has unsaved changes.\nSave them now?",
+            szFileName[0] ? szFileName : "The document");
+    ulReply = WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)szMsg, (PSZ)"Notepad2",
+                            0, MB_YESNOCANCEL | MB_QUERY | MB_MOVEABLE);
+
+    if (ulReply == MBID_CANCEL)
+        return FALSE;
+    if (ulReply == MBID_YES)
+        return DoSave(hwnd, FALSE);   /* a failed save must not discard either */
+    return TRUE;
+}
+
 /* The Long Line Column dialog - Notepad2's ColumnWrapDlgProc, ported.
  * NOTE: WM_INITDLG returns FALSE so PM assigns the focus. Win32's WM_INITDIALOG
  * convention is inverted; returning TRUE here leaves the dialog keyboard-dead. */
@@ -253,8 +295,14 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 "View menu toggles wrap and the line-number margin, and the Long Line\r\n"
                 "Column dialog is Notepad2's ColumnWrapDlgProc converted to PM.\r\n"
                 "\r\n"
-                "Select a line, Edit/Copy, then Edit/Paste to exercise the clipboard.\r\n"));
+                "Select a line, Edit/Copy, then Edit/Paste to exercise the clipboard.\r\n"
+                "\r\n"
+                "Search menu: Find (Ctrl+F), Replace (Ctrl+H), F3 / Shift+F3 to repeat.\r\n"
+                "Searching is Scintilla's own SCI_FINDTEXT - the dialog is the ported part.\r\n"));
             Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
+            /* Without this the starter text counts as an unsaved change and the
+               very first File/New would prompt to save it. */
+            Sci(SCI_SETSAVEPOINT, 0, 0);
             ApplyView();
             WinSetFocus(HWND_DESKTOP, hwndSci);
         }
@@ -276,15 +324,26 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
     case WM_COMMAND: {
         HWND hwndFrame = WinQueryWindow(hwnd, QW_PARENT);
+        /* Commands that open the modeless search dialog must NOT have focus
+         * yanked back to the editor at the end of this handler. */
+        BOOL bKeepFocus = FALSE;
+
         switch (SHORT1FROMMP(mp1)) {
-        case IDM_NEW:       Sci(SCI_CLEARALL, 0, 0);
-                            Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
-                            szFileName[0] = '\0';
-                            strcpy(szStatus, "New document");
-                            ShowStatus();                            break;
+        case IDM_NEW:
+            if (!ConfirmDiscard(hwnd))
+                break;
+            Sci(SCI_CLEARALL, 0, 0);
+            Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
+            Sci(SCI_SETSAVEPOINT, 0, 0);
+            szFileName[0] = '\0';
+            strcpy(szStatus, "New document");
+            ShowStatus();
+            break;
 
         case IDM_OPEN: {
             CHAR szPick[CCHMAXPATH];
+            if (!ConfirmDiscard(hwnd))
+                break;
             if (PickFile(hwnd, FALSE, (PSZ)szPick))
                 LoadFile(hwnd, (PSZ)szPick);
             ShowStatus();
@@ -292,14 +351,47 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
         }
 
-        case IDM_SAVEAS: {
-            CHAR szPick[CCHMAXPATH];
-            if (PickFile(hwnd, TRUE, (PSZ)szPick))
-                SaveFile(hwnd, (PSZ)szPick);
+        case IDM_SAVE:
+            DoSave(hwnd, FALSE);
+            ShowStatus();
+            break;
+
+        case IDM_SAVEAS:
+            DoSave(hwnd, TRUE);
             ShowStatus();
             WinInvalidateRect(hwnd, NULL, TRUE);
             break;
-        }
+
+        case IDM_FIND:
+            EditFindReplaceDlg(hwnd, hwndSci, &efrData, FALSE);
+            bKeepFocus = TRUE;
+            break;
+
+        case IDM_REPLACE:
+            EditFindReplaceDlg(hwnd, hwndSci, &efrData, TRUE);
+            bKeepFocus = TRUE;
+            break;
+
+        /* F3 / Shift+F3 repeat the last search with no dialog open. With an
+         * empty pattern there is nothing to repeat, so open the dialog rather
+         * than silently doing nothing. */
+        case IDM_FINDNEXT:
+            if (efrData.szFind[0])
+                EditFindNext(hwndSci, &efrData, FALSE);
+            else {
+                EditFindReplaceDlg(hwnd, hwndSci, &efrData, FALSE);
+                bKeepFocus = TRUE;
+            }
+            break;
+
+        case IDM_FINDPREV:
+            if (efrData.szFind[0])
+                EditFindPrev(hwndSci, &efrData, FALSE);
+            else {
+                EditFindReplaceDlg(hwnd, hwndSci, &efrData, FALSE);
+                bKeepFocus = TRUE;
+            }
+            break;
         case IDM_UNDO:      Sci(SCI_UNDO, 0, 0);                     break;
         case IDM_REDO:      Sci(SCI_REDO, 0, 0);                     break;
         case IDM_CUT:       Sci(SCI_CUT, 0, 0);                      break;
@@ -326,10 +418,13 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         case IDM_EXIT:
+            if (!ConfirmDiscard(hwnd))
+                break;
             WinPostMsg(hwnd, WM_QUIT, 0, 0);
             break;
         }
-        WinSetFocus(HWND_DESKTOP, hwndSci);
+        if (!bKeepFocus)
+            WinSetFocus(HWND_DESKTOP, hwndSci);
         return (MRESULT)0;
     }
     }
@@ -362,9 +457,15 @@ int main(void)
     WinSetWindowPos(hwndFrame, HWND_TOP, 40, 40, 720, 440,
                     SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
 
+    /* One loop drives both the frame and the modeless Find dialog. PM needs no
+     * IsDialogMessage equivalent: the dialog is an ordinary window in this
+     * queue, and WinDefDlgProc handles its tabbing and default-button logic
+     * when WinDispatchMsg delivers to it. */
     while (WinGetMsg(hab, &qmsg, NULLHANDLE, 0, 0))
         WinDispatchMsg(hab, &qmsg);
 
+    if (EditFindReplaceHwnd() != NULLHANDLE)
+        WinDestroyWindow(EditFindReplaceHwnd());
     WinDestroyWindow(hwndFrame);
     WinDestroyMsgQueue(hmq);
     WinTerminate(hab);

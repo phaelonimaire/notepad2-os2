@@ -5,8 +5,9 @@ MENU IDD_NP2MAIN
 BEGIN
     SUBMENU "~File", IDM_FILE
     BEGIN
-        MENUITEM "~New",       IDM_NEW
-        MENUITEM "~Open...",   IDM_OPEN
+        MENUITEM "~New",        IDM_NEW
+        MENUITEM "~Open...",    IDM_OPEN
+        MENUITEM "~Save",       IDM_SAVE
         MENUITEM "Save ~as...", IDM_SAVEAS
         MENUITEM SEPARATOR
         MENUITEM "E~xit", IDM_EXIT
@@ -21,6 +22,14 @@ BEGIN
         MENUITEM "~Paste",      IDM_PASTE
         MENUITEM SEPARATOR
         MENUITEM "Select ~All", IDM_SELECTALL
+    END
+    SUBMENU "~Search", IDM_SEARCH
+    BEGIN
+        MENUITEM "~Find...",      IDM_FIND
+        MENUITEM "Find ~Next",    IDM_FINDNEXT
+        MENUITEM "Find ~Previous", IDM_FINDPREV
+        MENUITEM SEPARATOR
+        MENUITEM "~Replace...",   IDM_REPLACE
     END
     SUBMENU "~View", IDM_VIEW
     BEGIN
@@ -42,6 +51,81 @@ BEGIN
     END
 END
 
+/* Find and Replace, converted from Notepad2's IDD_FIND / IDD_REPLACE.
+ *
+ * Laid out from scratch rather than by translating the Win32 coordinates:
+ * PM dialog units have a BOTTOM-LEFT origin, so every y in the original is
+ * measured from the wrong edge and a mechanical conversion silently produces an
+ * upside-down dialog [os2ref/resources-and-dialogs.md 2.1].
+ *
+ * The combo boxes use CONTROL + WC_COMBOBOX rather than the COMBOBOX shorthand:
+ * wrc accepts the shorthand but emits a template PM rejects at load time with
+ * PMERR_INVALID_HWND. Their cy spans the entry field PLUS the dropped-down list,
+ * so the entry field sits at the TOP of the stated rectangle - which is why each
+ * combo's y is far below its label.
+ *
+ * The LTEXT labels carry NO "~" mnemonic, deliberately. A PM static text control
+ * has no mnemonic to give: IBM lists only DT_LEFT/CENTER/RIGHT, DT_TOP/VCENTER/
+ * BOTTOM and DT_WORDBREAK as the flags SS_TEXT honours - DT_MNEMONIC is not among
+ * them - and a static's WM_MATCHMNEMONIC "takes no action ... other than to set rc
+ * to FALSE" [DOC-IBM pm3.txt "Static Control Styles", "WM_MATCHMNEMONIC (in Static
+ * Controls) - Default Processing"]. A "~" left in a label is simply DRAWN, which is
+ * what the Win32 "&Search string:" translates to if you convert it mechanically.
+ * Buttons and menu items do honour "~"; the checkboxes and push buttons below rely
+ * on it.
+ */
+DLGTEMPLATE IDD_FIND
+BEGIN
+    DIALOG "Find", IDD_FIND, 20, 20, 310, 110, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Search string:", -1, 8, 98, 80, 8
+
+        CONTROL "", IDC_FINDTEXT, 8, 50, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        AUTOCHECKBOX "Match ~case",                  IDC_FINDCASE,        8, 34, 135, 10
+        AUTOCHECKBOX "Match ~whole word only",       IDC_FINDWORD,        8, 22, 135, 10
+        AUTOCHECKBOX "Match ~beginning of word only", IDC_FINDSTART,      8, 10, 135, 10
+
+        AUTOCHECKBOX "Regular ~expression",          IDC_FINDREGEXP,    150, 34, 120, 10
+        AUTOCHECKBOX "~Transform backslashes",       IDC_FINDTRANSFORMBS, 150, 22, 120, 10
+        AUTOCHECKBOX "~Don't wrap around",           IDC_NOWRAP,        150, 10, 120, 10
+
+        DEFPUSHBUTTON "~Find Next", DID_OK,          238, 88, 64, 14
+        PUSHBUTTON    "~Previous",  IDC_FINDPREVBTN, 238, 70, 64, 14
+        PUSHBUTTON    "Close",      DID_CANCEL,      238, 52, 64, 14
+    END
+END
+
+DLGTEMPLATE IDD_REPLACE
+BEGIN
+    DIALOG "Replace", IDD_REPLACE, 20, 20, 310, 165, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Search string:", -1, 8, 152, 80, 8
+        CONTROL "", IDC_FINDTEXT, 8, 104, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        LTEXT   "Replace with:", -1, 8, 94, 80, 8
+        CONTROL "", IDC_REPLACETEXT, 8, 46, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP
+
+        AUTOCHECKBOX "Match ~case",                  IDC_FINDCASE,        8, 34, 135, 10
+        AUTOCHECKBOX "Match ~whole word only",       IDC_FINDWORD,        8, 22, 135, 10
+        AUTOCHECKBOX "Match ~beginning of word only", IDC_FINDSTART,      8, 10, 135, 10
+
+        AUTOCHECKBOX "Regular ~expression",          IDC_FINDREGEXP,    150, 34, 120, 10
+        AUTOCHECKBOX "~Transform backslashes",       IDC_FINDTRANSFORMBS, 150, 22, 120, 10
+        AUTOCHECKBOX "~Don't wrap around",           IDC_NOWRAP,        150, 10, 120, 10
+
+        DEFPUSHBUTTON "~Find Next",    DID_OK,           238, 143, 64, 14
+        PUSHBUTTON    "~Previous",     IDC_FINDPREVBTN,  238, 125, 64, 14
+        PUSHBUTTON    "~Replace",      IDC_REPLACEBTN,   238, 107, 64, 14
+        PUSHBUTTON    "Replace ~All",  IDC_REPLACEALL,   238,  89, 64, 14
+        PUSHBUTTON    "In ~Selection", IDC_REPLACEINSEL, 238,  71, 64, 14
+        PUSHBUTTON    "Close",         DID_CANCEL,       238,  53, 64, 14
+    END
+END
+
 /* Accelerators. The frame processes these BEFORE the focus window sees the key, which
    is what makes Ctrl+C/V work while the Scintilla child holds focus and consumes
    WM_CHAR itself. AF_CHAR + AF_CONTROL per os2ref/resources-and-dialogs.md 9. */
@@ -52,6 +136,17 @@ BEGIN
     "v", IDM_PASTE,     CHAR, CONTROL
     "x", IDM_CUT,       CHAR, CONTROL
     "z", IDM_UNDO,      CHAR, CONTROL
+    "y", IDM_REDO,      CHAR, CONTROL
+    "s", IDM_SAVE,      CHAR, CONTROL
+    "o", IDM_OPEN,      CHAR, CONTROL
+    "n", IDM_NEW,       CHAR, CONTROL
+    "f", IDM_FIND,      CHAR, CONTROL
+    "h", IDM_REPLACE,   CHAR, CONTROL
+
+    /* F3 / Shift+F3 repeat the search without reopening the dialog - the
+       convention Notepad2 uses and OS/2 editors share. */
+    VK_F3, IDM_FINDNEXT, VIRTUALKEY
+    VK_F3, IDM_FINDPREV, VIRTUALKEY, SHIFT
 
     /* The traditional OS/2 CUA editing keys. IBM documents these for entry fields and
        MLEs [DOC-IBM - pmv2base.txt]: Ctrl+Insert copies, Shift+Insert pastes,
