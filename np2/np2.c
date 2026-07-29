@@ -19,6 +19,8 @@
 #include "Scintilla.h"
 #include "np2.h"
 #include "np2find.h"
+#include "np2edit.h"
+#include "np2dlg.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -26,7 +28,22 @@ extern "C" void Scintilla_RegisterClasses(void *hab);
 static HWND  hwndSci = NULLHANDLE;
 static BOOL  bWordWrap    = FALSE;
 static BOOL  bLineNumbers = TRUE;
-static SHORT sEdgeColumn  = 80;
+
+/* Everything the Settings dialogs edit. ApplySettings is the only writer to
+ * Scintilla for these, so there is one place to look when a setting does not
+ * take effect. */
+static NP2SETTINGS settings;
+
+/* Search / Lines dialog inputs persist between invocations, as they do in
+ * Notepad2 - reopening Modify Lines should show what you typed last time. */
+static char szPrefix[256]  = "";
+static char szAppend[256]  = "";
+static char szEncOpen[256] = "";
+static char szEncClose[256] = "";
+static char szTagOpen[256] = "";
+static char szTagClose[256] = "";
+static int  iAlignMode = ALIGN_LEFT;
+static int  iSortFlags = SORT_ASCENDING;
 
 static CHAR szFileName[CCHMAXPATH] = "";
 static CHAR szStatus[256] = "";
@@ -214,48 +231,15 @@ static BOOL ConfirmDiscard(HWND hwnd)
     return TRUE;
 }
 
-/* The Long Line Column dialog - Notepad2's ColumnWrapDlgProc, ported.
- * NOTE: WM_INITDLG returns FALSE so PM assigns the focus. Win32's WM_INITDIALOG
- * convention is inverted; returning TRUE here leaves the dialog keyboard-dead. */
-static MRESULT EXPENTRY ColumnDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
-{
-    static SHORT *piNumber;
-
-    switch (msg) {
-    case WM_INITDLG:
-        piNumber = (SHORT *)mp2;
-        WinSetDlgItemShort(hwnd, IDC_COLUMNWRAP, (USHORT)*piNumber, FALSE);
-        WinSendDlgItemMsg(hwnd, IDC_COLUMNWRAP, EM_SETTEXTLIMIT, MPFROMSHORT(15), 0);
-        PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
-        return (MRESULT)FALSE;
-
-    case WM_COMMAND:
-        switch (SHORT1FROMMP(mp1)) {
-        case DID_OK: {
-            SHORT s = 0;
-            if (WinQueryDlgItemShort(hwnd, IDC_COLUMNWRAP, &s, FALSE)) {
-                *piNumber = s;
-                WinDismissDlg(hwnd, DID_OK);
-            } else {
-                PMFocusDlgItem(hwnd, IDC_COLUMNWRAP);
-            }
-            return (MRESULT)0;
-        }
-        case DID_CANCEL:
-            WinDismissDlg(hwnd, DID_CANCEL);
-            return (MRESULT)0;
-        }
-        return (MRESULT)0;
-    }
-    return WinDefDlgProc(hwnd, msg, mp1, mp2);
-}
-
+/* The ad-hoc "Long Line Column" dialog that used to live here has been replaced
+ * by Notepad2's real Long Lines dialog (np2dlg.c), which also carries the edge
+ * mode. Word wrap and line numbers now go through ApplySettings with everything
+ * else instead of a private ApplyView. */
 static void ApplyView(void)
 {
-    Sci(SCI_SETWRAPMODE, MPFROMLONG(bWordWrap ? SC_WRAP_WORD : SC_WRAP_NONE), 0);
-    Sci(SCI_SETMARGINWIDTHN, MPFROMLONG(0), MPFROMLONG(bLineNumbers ? 44 : 0));
-    Sci(SCI_SETEDGEMODE, MPFROMLONG(EDGE_LINE), 0);
-    Sci(SCI_SETEDGECOLUMN, MPFROMLONG(sEdgeColumn), 0);
+    settings.fWordWrap    = bWordWrap;
+    settings.bLineNumbers = bLineNumbers;
+    ApplySettings(hwndSci, &settings);
 }
 
 /* Reflect the toggles into the menu with MM_SETITEMATTR
@@ -292,13 +276,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 "Edit menu drives SCI_UNDO / SCI_CUT / SCI_COPY / SCI_PASTE, so the\r\n"
                 "clipboard path goes through DosAllocSharedMem + WinSetClipbrdData.\r\n"
                 "\r\n"
-                "View menu toggles wrap and the line-number margin, and the Long Line\r\n"
-                "Column dialog is Notepad2's ColumnWrapDlgProc converted to PM.\r\n"
-                "\r\n"
                 "Select a line, Edit/Copy, then Edit/Paste to exercise the clipboard.\r\n"
                 "\r\n"
-                "Search menu: Find (Ctrl+F), Replace (Ctrl+H), F3 / Shift+F3 to repeat.\r\n"
-                "Searching is Scintilla's own SCI_FINDTEXT - the dialog is the ported part.\r\n"));
+                "Search menu: Find (Ctrl+F), Replace (Ctrl+H), F3 / Shift+F3, Go To (Ctrl+G).\r\n"
+                "Searching is Scintilla's own SCI_FINDTEXT - the dialog is the ported part.\r\n"
+                "\r\n"
+                "Edit/Lines has Modify, Align and Sort; Settings has Tabs, Long Lines and\r\n"
+                "Word Wrap. All ten dialogs are Notepad2's own, converted to PM.\r\n"
+                "\r\n"
+                "banana\r\n"
+                "Apple\r\n"
+                "cherry\r\n"
+                "apple\r\n"
+                "item10\r\n"
+                "item9\r\n"));
             Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
             /* Without this the starter text counts as an unsaved change and the
                very first File/New would prompt to save it. */
@@ -411,10 +402,54 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             SyncMenu(hwndFrame);
             break;
 
-        case IDM_COLWRAP:
-            if (WinDlgBox(HWND_DESKTOP, hwnd, ColumnDlgProc, NULLHANDLE,
-                          IDD_COLUMNWRAP, &sEdgeColumn) == DID_OK)
-                ApplyView();
+        case IDM_GOTOLINE:
+            EditGotoLineDlg(hwnd, hwndSci);
+            break;
+
+        /* --- Settings ------------------------------------------------------ */
+        case IDM_TABSETTINGS:
+            if (EditTabSettingsDlg(hwnd, &settings))
+                ApplySettings(hwndSci, &settings);
+            break;
+
+        case IDM_LONGLINESET:
+            if (EditLongLinesDlg(hwnd, &settings))
+                ApplySettings(hwndSci, &settings);
+            break;
+
+        case IDM_WORDWRAPSET:
+            if (EditWordWrapDlg(hwnd, &settings))
+                ApplySettings(hwndSci, &settings);
+            break;
+
+        /* --- Lines and selection ------------------------------------------- */
+        case IDM_MODIFYLINES:
+            if (EditModifyLinesDlg(hwnd, szPrefix, szAppend, sizeof(szPrefix)))
+                EditModifyLines(hwndSci, szPrefix, szAppend);
+            break;
+
+        case IDM_ALIGNLINES:
+            if (EditAlignDlg(hwnd, &iAlignMode))
+                EditAlignText(hwndSci, iAlignMode);
+            break;
+
+        case IDM_SORTLINES:
+            if (EditSortDlg(hwnd, hwndSci, &iSortFlags))
+                EditSortLines(hwndSci, iSortFlags);
+            break;
+
+        case IDM_ENCLOSESEL:
+            if (EditEncloseSelectionDlg(hwnd, szEncOpen, szEncClose, sizeof(szEncOpen)))
+                EditEncloseSelection(hwndSci, szEncOpen, szEncClose);
+            break;
+
+        case IDM_INSERTTAG:
+            if (EditInsertTagDlg(hwnd, szTagOpen, szTagClose, sizeof(szTagOpen)))
+                EditEncloseSelection(hwndSci, szTagOpen, szTagClose);
+            break;
+
+        case IDM_ABOUT:
+            EditAboutDlg(hwnd);
             break;
 
         case IDM_EXIT:
@@ -440,6 +475,10 @@ int main(void)
                     FCF_MINMAX | FCF_TASKLIST | FCF_MENU |
                     FCF_ACCELTABLE;
     QMSG  qmsg;
+
+    SettingsDefaults(&settings);
+    bWordWrap    = settings.fWordWrap;
+    bLineNumbers = settings.bLineNumbers;
 
     Scintilla_RegisterClasses((void *)hab);
     WinRegisterClass(hab, (PSZ)"Notepad2Client", ClientWndProc, CS_SIZEREDRAW, 0);
