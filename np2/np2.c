@@ -22,6 +22,7 @@
 #include "np2edit.h"
 #include "np2dlg.h"
 #include "np2cmd.h"
+#include "np2style.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -68,6 +69,11 @@ static BOOL bMarkOccWord      = FALSE;
  * persistence is not written yet, and a checkbox that silently forgets is
  * better than one that silently does nothing. */
 static BOOL bSuppressEOLChanged = FALSE;
+
+/* Syntax scheme + the font every style inherits. */
+static int  iScheme = 0;
+static CHAR szFontFace[FACESIZE] = "Courier";
+static int  iFontSize = 11;
 
 /* Commands that are nothing but a Scintilla message. Keeping them in a table
  * rather than the switch is the difference between a readable dispatch and
@@ -120,6 +126,11 @@ static void ShowStatus(void)
     if (hwndFrameGlobal != NULLHANDLE)
         WinSetWindowText(hwndFrameGlobal, (PSZ)szTitle);
 }
+
+/* Forward declarations: LoadFile and ApplyScheme both need these, and both
+   sit above them so the file reads file-I/O first, view second. */
+static void ApplyView(void);
+static void SyncMenu(HWND hwndFrame);
 
 static MRESULT Sci(unsigned int msg, MPARAM mp1, MPARAM mp2)
 {
@@ -198,7 +209,18 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     free(pBuf);
 
     strcpy(szFileName, (char *)pszFile);
-    sprintf(szStatus, "Loaded %lu bytes from %s", (unsigned long)cbRead, pszFile);
+
+    /* Pick the scheme from the extension, as Notepad2 does on open. */
+    iScheme = Style_MatchFromFile(szFileName);
+    Style_Apply(hwndSci, iScheme, szFontFace, iFontSize);
+    if (!Style_SupportsFolding(iScheme))
+        bFolding = FALSE;
+    ApplyView();
+    if (hwndFrameGlobal != NULLHANDLE)
+        SyncMenu(hwndFrameGlobal);
+
+    sprintf(szStatus, "Loaded %lu bytes  [%s]",
+            (unsigned long)cbRead, Style_Name(iScheme));
     return TRUE;
 }
 
@@ -318,6 +340,56 @@ static void ApplyView(void)
     Sci(SCI_SETREADONLY,   MPFROMLONG(bReadOnly), 0);
 }
 
+/* Push the current scheme and font into the control. Called on load, on a
+ * manual scheme change, and after a font change - all three have to go
+ * through here, or the syntax styles keep the old font. */
+static void ApplyScheme(HWND hwndFrame)
+{
+    Style_Apply(hwndSci, iScheme, szFontFace, iFontSize);
+    /* Folding is only real when the lexer emits fold levels. */
+    if (!Style_SupportsFolding(iScheme))
+        bFolding = FALSE;
+    ApplyView();
+    if (hwndFrame != NULLHANDLE)
+        SyncMenu(hwndFrame);
+}
+
+/* Fill the Syntax Scheme submenu from np2style.c's table. Doing it at run
+ * time means adding a language touches one table and nothing else.
+ * MM_QUERYITEM gets the submenu's window handle; MM_INSERTITEM needs a
+ * MENUITEM plus the text as mp2 [DOC-IBM - os2ref/pm-controls.md menus]. */
+static void BuildSchemeMenu(HWND hwndFrame)
+{
+    HWND     hwndMenu = WinWindowFromID(hwndFrame, FID_MENU);
+    MENUITEM mi;
+    int      i;
+
+    if (hwndMenu == NULLHANDLE)
+        return;
+    if (!(BOOL)LONGFROMMR(WinSendMsg(hwndMenu, MM_QUERYITEM,
+            MPFROM2SHORT(IDM_SCHEME_MENU, TRUE), MPFROMP(&mi))))
+        return;
+    if (mi.hwndSubMenu == NULLHANDLE)
+        return;
+
+    /* Drop the placeholder that keeps the .RC template valid. */
+    WinSendMsg(mi.hwndSubMenu, MM_DELETEITEM,
+               MPFROM2SHORT(IDM_SCHEME_BASE, FALSE), 0);
+
+    for (i = 0; i < Style_Count(); i++) {
+        MENUITEM item;
+        memset(&item, 0, sizeof(item));
+        item.iPosition   = MIT_END;
+        item.afStyle     = MIS_TEXT;
+        item.afAttribute = 0;
+        item.id          = (USHORT)(IDM_SCHEME_BASE + i);
+        item.hwndSubMenu = NULLHANDLE;
+        item.hItem       = 0;
+        WinSendMsg(mi.hwndSubMenu, MM_INSERTITEM,
+                   MPFROMP(&item), MPFROMP((PSZ)Style_Name(i)));
+    }
+}
+
 /* Line endings. SCI_SETEOLMODE changes what NEW lines use; SCI_CONVERTEOLS
  * rewrites the ones already there. Notepad2 does both, and doing only the
  * first is the classic half-fix: the file looks unchanged until you type. */
@@ -430,6 +502,18 @@ static void SyncMenu(HWND hwndFrame)
                    MPFROM2SHORT(MIA_CHECKED, bMarkOccCase ? MIA_CHECKED : 0));
         WinSendMsg(hwndMenu, MM_SETITEMATTR, MPFROM2SHORT(IDM_MARKOCC_WORD, TRUE),
                    MPFROM2SHORT(MIA_CHECKED, bMarkOccWord ? MIA_CHECKED : 0));
+
+        for (i = 0; i < Style_Count(); i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                       MPFROM2SHORT(IDM_SCHEME_BASE + i, TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, (iScheme == i) ? MIA_CHECKED : 0));
+
+        /* Code Folding is meaningless without a lexer that emits fold levels;
+         * grey it out rather than offer a switch that does nothing. */
+        WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                   MPFROM2SHORT(IDM_FOLDING, TRUE),
+                   MPFROM2SHORT(MIA_DISABLED,
+                       Style_SupportsFolding(iScheme) ? 0 : MIA_DISABLED));
     }
 }
 
@@ -519,6 +603,14 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             }
         }
 
+        /* Scheme ids are a contiguous run generated from np2style.c's table. */
+        if (idCmd >= IDM_SCHEME_BASE && idCmd < IDM_SCHEME_BASE + Style_Count()) {
+            iScheme = idCmd - IDM_SCHEME_BASE;
+            ApplyScheme(hwndFrame);
+            WinSetFocus(HWND_DESKTOP, hwndSci);
+            return (MRESULT)0;
+        }
+
         switch (idCmd) {
         case IDM_NEW:
             if (!ConfirmDiscard(hwnd))
@@ -538,7 +630,10 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             if (PickFile(hwnd, FALSE, (PSZ)szPick))
                 LoadFile(hwnd, (PSZ)szPick);
             ShowStatus();
-            WinInvalidateRect(hwnd, NULL, TRUE);
+            /* Invalidate the EDITOR, not just the client: the client is fully
+             * covered by its child, so invalidating it repaints nothing the
+             * user can see and the area the dialog occupied stays stale. */
+            WinInvalidateRect(hwndSci, NULL, TRUE);
             break;
         }
 
@@ -550,7 +645,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         case IDM_SAVEAS:
             DoSave(hwnd, TRUE);
             ShowStatus();
-            WinInvalidateRect(hwnd, NULL, TRUE);
+            WinInvalidateRect(hwndSci, NULL, TRUE);
             break;
 
         case IDM_FIND:
@@ -777,6 +872,12 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             SyncMenu(hwndFrame);
             break;
 
+        /* --- Syntax scheme and font ---------------------------------------- */
+        case IDM_VIEW_FONT:
+            if (Style_ChooseFont(hwnd, szFontFace, sizeof(szFontFace), &iFontSize))
+                ApplyScheme(hwndFrame);
+            break;
+
         /* --- Line endings -------------------------------------------------- */
         case IDM_EOL_CRLF: SetEOLMode(hwnd, SC_EOL_CRLF); SyncMenu(hwndFrame); break;
         case IDM_EOL_LF:   SetEOLMode(hwnd, SC_EOL_LF);   SyncMenu(hwndFrame); break;
@@ -809,7 +910,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 strcpy(szKeep, szFileName);
                 LoadFile(hwnd, (PSZ)szKeep);
                 ShowStatus();
-                WinInvalidateRect(hwnd, NULL, TRUE);
+                WinInvalidateRect(hwndSci, NULL, TRUE);
             }
             break;
 
@@ -852,6 +953,9 @@ int main(void)
         WinDestroyMsgQueue(hmq); WinTerminate(hab); return 1;
     }
     hwndFrameGlobal = hwndFrame;
+    BuildSchemeMenu(hwndFrame);
+    Style_Apply(hwndSci, iScheme, szFontFace, iFontSize);
+    ApplyView();
     SyncMenu(hwndFrame);
     ShowStatus();
     WinSetWindowPos(hwndFrame, HWND_TOP, 40, 40, 720, 440,

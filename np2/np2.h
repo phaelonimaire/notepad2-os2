@@ -248,3 +248,9 @@
 #define IDD_INFOBOX         540
 #define IDC_INFOTEXT        780
 #define IDC_INFOSUPPRESS    781
+
+/* Syntax schemes.  IDM_SCHEME_BASE..+31 are generated at run time from the
+   table in np2style.c, so the menu never drifts from the schemes. */
+#define IDM_SCHEME_MENU     370
+#define IDM_VIEW_FONT       371
+#define IDM_SCHEME_BASE     900

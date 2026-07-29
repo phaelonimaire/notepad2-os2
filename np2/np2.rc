@@ -140,6 +140,14 @@ BEGIN
     END
     SUBMENU "~View", IDM_VIEW
     BEGIN
+        /* The Syntax Scheme submenu is filled at run time from np2style.c's
+           table - an empty placeholder here keeps the two from drifting. */
+        SUBMENU "S~yntax Scheme", IDM_SCHEME_MENU
+        BEGIN
+            MENUITEM "(none)", IDM_SCHEME_BASE
+        END
+        MENUITEM "Default ~Font...",       IDM_VIEW_FONT
+        MENUITEM SEPARATOR
         MENUITEM "~Word Wrap",             IDM_WORDWRAP
         MENUITEM "~Long Line Marker",      IDM_LONGLINEMARKER
         MENUITEM "Indentation ~Guides",    IDM_INDENTGUIDES
@@ -159,7 +167,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "Line ~Numbers",          IDM_LINENUMBERS
         MENUITEM "Selection ~Margin",      IDM_SELMARGIN
-        MENUITEM "Code ~Folding",          IDM_FOLDING
+        MENUITEM "~Code Folding",          IDM_FOLDING
         MENUITEM "~Toggle All Folds",      IDM_TOGGLEFOLDS
         MENUITEM SEPARATOR
         MENUITEM "Zoom ~In\tCtrl+Plus",   IDM_ZOOMIN
