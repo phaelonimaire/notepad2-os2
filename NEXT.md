@@ -1,6 +1,6 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-07-29 (Find/Replace, then ten more dialogs).
+Checkpoint: 2026-07-29 (Find/Replace, ten dialogs, then the command surface).
 
 ## Where this stands
 
@@ -8,9 +8,14 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 33 (~13%) |
+| Menu commands | 245 | 102 (~42%) |
 | Dialogs | 27 | 13 |
-| App-layer code | 26,796 lines | ~2,400 lines |
+| App-layer code | 26,796 lines | ~4,200 lines |
+
+Of the 143 commands still missing, the great majority are the *menus* listed below rather than
+scattered gaps: Encoding (8), Line Endings (4), Reload (5), Launch (7), Favorites (4), Mark
+Occurrences (6), plus window-title/Esc-key/toolbar/statusbar preference groups. The text-editing
+surface itself is essentially complete.
 
 The remaining 14 dialogs are **not** more of the same work — every one of them is blocked on a
 subsystem this port does not have yet, which is why the count stops here rather than at 27:
@@ -39,8 +44,15 @@ portable translation units compile unmodified. All of it verified on screen, not
 undo, word wrap, line numbers, and Find / Replace with match-case / whole-word / word-start / regex,
 Replace All, In Selection, a search MRU and F3 repeat. Go To Line; Modify Lines with `$(...)`
 numbering, Align, Sort (byte or logical, dedup, shuffle), Enclose Selection and Insert Tag; and
-Settings for tabs, long lines and word wrap. It is no longer only a demo, but it is a long way from
-Notepad2 — the missing half is syntax highlighting and encodings, not more dialogs.
+Settings for tabs, long lines and word wrap.
+
+Plus the full command surface: Lines (move/duplicate/cut/copy/delete, split, join, join paragraphs),
+Block (indent, pad, strip first/last char, trim, compress whitespace, merge/remove blank lines),
+Enclose shortcuts, Convert (five case modes, tabify/untabify by selection or indent), Insert
+(date/time, filename, path), Special (line/stream comment, URL and C escaping, char↔hex, matching
+brace, delete line/word left/right), Bookmarks, and the View toggles with zoom.
+
+What is genuinely missing is **syntax highlighting and encodings** — not more editing commands.
 
 ## Build
 
@@ -59,7 +71,7 @@ g++ -std=c++11 -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
 # the app
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
-    np2.c np2find.c np2edit.c np2dlg.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
+    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe
 ```
 
@@ -99,6 +111,16 @@ wrc np2.res np2.exe
 
    Genuinely absent, so design around them: `SHAutoComplete` (no alternative) and the tray
    (WarpCenter has none; XWorkplace's taskbar does, which would be an add-on dependency).
+
+### Command-surface notes
+
+- `EditToggleLineComments` uses `"//"` because no lexer is wired up; the marker should come from
+  the language once `Styles.c` lands.
+- Code Folding turns the margin on but a lexer has to emit fold levels for it to do anything - it
+  is honest-but-inert until step 4.
+- Bookmarks live on marker 1, deliberately clear of `SC_MASK_FOLDERS` so folding can use 2.
+- Case conversion, tabify/untabify and the hex commands are byte-oriented like the rest of the
+  port; `UniTransUpper`/`UniTransLower` is the locale-correct route and belongs with step 5.
 
 ### Conversion notes for whoever does the next batch
 
