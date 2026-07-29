@@ -12,28 +12,28 @@ The **platform layer is done**; the **application is not**.
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | ~4,200 lines |
 
-Of the 143 commands still missing, the great majority are the *menus* listed below rather than
-scattered gaps: Encoding (8), Line Endings (4), Reload (5), Launch (7), Favorites (4), Mark
-Occurrences (6), plus window-title/Esc-key/toolbar/statusbar preference groups. The text-editing
-surface itself is essentially complete.
+The 143 commands still missing are whole menus rather than scattered gaps, and the text-editing
+surface itself is essentially complete. See "What is left" below for what each actually requires —
+most of it is ordinary unwritten work, not a platform limitation.
 
-The remaining 14 dialogs are **not** more of the same work — every one of them is blocked on a
-subsystem this port does not have yet, which is why the count stops here rather than at 27:
+## What is left, and what it actually needs
 
-| Blocked on | Dialogs |
-|---|---|
-| `Styles.c` (step 4) | Style Select, Style Configure |
-| encoding / `UniUconv` (step 5) | Default Encoding, Encoding, Recode, Default Line Ending |
-| a file browser on `WC_CONTAINER` (step 6) | Open With, Favorites, Add To Favorites, File MRU |
-| printing, unimplemented here | Page Setup |
-| file-change monitoring | Change Notify |
-| `DosStartSession` | Run |
-| INI-backed "don't show again" | Info Box ×3 |
+Nothing below is "blocked" except where explicitly said. Earlier revisions of this file used that
+word for work that simply had not been written, which is a different thing and makes tractable work
+look impossible. Sized honestly:
 
-"Blocked" means *this port has not built it yet*, not that OS/2 lacks the API. Printing is fully
-documented (`os2ref/printing-spooler.md`) and `DosStartSession` is a normal call. The one genuine
-platform absence in that table is **file-change monitoring** — OS/2 has no notification API at any
-layer, so Change Notify would have to poll `DosQueryPathInfo` timestamps.
+| Remaining | Needs | Size |
+|---|---|---|
+| **Line Endings** (4 cmds) | `SCI_SETEOLMODE` + `SCI_CONVERTEOLS`. No encoding involved | **Trivial** — an afternoon |
+| **Mark Occurrences** (6) | `SCI_INDICSETSTYLE` / `SETINDICATORCURRENT` / `INDICATORFILLRANGE`; `EditMarkAll` in `Edit.c` ports directly | **Small** |
+| **Info Box** ×3 | A message box plus a "don't show again" checkbox | **Trivial** |
+| **Launch / Run** (7) | `DosStartSession` / `DosExecPgm` (`os2ref/session-manager.md`) | **Small** |
+| **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
+| **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
+| **Toolbar / statusbar** | No PM control classes for these — compose from `WC_STATIC` and owner-drawn buttons | **Medium** |
+| **`Styles.c`** (5,169 lines) | Scintilla styling wired to an OS/2 font and colour story. Lexers already compiled and linked | **Large** |
+| **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
+| **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
 
 `scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
 `ListBox`, `Menu`, `ElapsedTime`, `DynamicLibrary`, the `Platform` statics, and `ScintillaPM.cxx` —
@@ -87,7 +87,9 @@ wrc np2.res np2.exe
    the lexers are already compiled and linked, so this is what turns the port into a *programmer's*
    editor. Needs Scintilla styling wired to an OS/2 font and colour story, then unblocks the two
    Style dialogs.
-5. **Encoding / line-ending conversion.** Runs straight into the three independent code pages
+5. **Encoding conversion.** (Line *endings* are not part of this — they are `SCI_SETEOLMODE` /
+   `SCI_CONVERTEOLS` and need nothing new; do them first, they are an afternoon.) Runs straight
+   into the three independent code pages
    (process / message queue / GPI) — see the toolkit's `os2ref/unicode-conversion.md` §9.1. Also
    the prerequisite for four dialogs, for `\uXXXX` in Find/Replace, and for making sort and
    alignment character-correct rather than byte-correct.
