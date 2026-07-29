@@ -19,11 +19,16 @@ subsystem this port does not have yet, which is why the count stops here rather 
 |---|---|
 | `Styles.c` (step 4) | Style Select, Style Configure |
 | encoding / `UniUconv` (step 5) | Default Encoding, Encoding, Recode, Default Line Ending |
-| `Dlapi.c` shell listviews (step 6) | Open With, Favorites, Add To Favorites, File MRU |
-| printing | Page Setup |
+| a file browser on `WC_CONTAINER` (step 6) | Open With, Favorites, Add To Favorites, File MRU |
+| printing, unimplemented here | Page Setup |
 | file-change monitoring | Change Notify |
 | `DosStartSession` | Run |
 | INI-backed "don't show again" | Info Box ×3 |
+
+"Blocked" means *this port has not built it yet*, not that OS/2 lacks the API. Printing is fully
+documented (`os2ref/printing-spooler.md`) and `DosStartSession` is a normal call. The one genuine
+platform absence in that table is **file-change monitoring** — OS/2 has no notification API at any
+layer, so Change Notify would have to poll `DosQueryPathInfo` timestamps.
 
 `scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
 `ListBox`, `Menu`, `ElapsedTime`, `DynamicLibrary`, the `Platform` statics, and `ScintillaPM.cxx` —
@@ -74,9 +79,26 @@ wrc np2.res np2.exe
    (process / message queue / GPI) — see the toolkit's `os2ref/unicode-conversion.md` §9.1. Also
    the prerequisite for four dialogs, for `\uXXXX` in Find/Replace, and for making sort and
    alignment character-correct rather than byte-correct.
-6. **`Dlapi.c` (1,586 lines)** — the file browser. The only piece with *no* PM equivalent: it drives
-   Win32 shell listviews and would need `WC_CONTAINER`, which nothing has exercised yet. Treat as
-   research, not translation. Unblocks four dialogs.
+
+   **Less work than it looks.** OS/2 ships `UCONV.DLL` with a full UCS-2 API, so
+   `MultiByteToWideChar`/`WideCharToMultiByte` → `UniUconvToUcs`/`FromUcs`, `LCMapString` →
+   `UniStrxfrm`, `CompareString` → `UniStrcoll`, `CharUpper` → `UniTransUpper`. The **only** piece
+   with no counterpart is `IsTextUnicode` — OS/2 converts but does not *detect*, so the BOM sniff /
+   UTF-8 well-formedness check has to be hand-written. (`unidef.h` and `uconv.h`, **not**
+   `os2emx.h` — grepping the latter alone reports no Unicode support, which is false.)
+6. **`Dlapi.c` (1,586 lines)** — the file browser. Needs `WC_CONTAINER`, which nothing here has
+   exercised yet, so it is still the least-charted piece — but **not** the API void it was first
+   called. The routes exist:
+   - `ListView_*` / `TreeView_*` → one `WC_CONTAINER` in `CV_DETAIL` / `CV_TREE` view
+   - `IShellFolder::EnumObjects` → `_wpQueryContent(somSelf, prev, QC_FIRST/QC_NEXT)`
+     (worked loops in `wps2.txt:9634`)
+   - `SHGetFileInfo` icons → `WinLoadFileIcon(pszFile, fPrivate)` / `WinFreeFileIcon`; pass
+     `fPrivate = FALSE` for a shared pointer, which is the caching story
+   - `SHBrowseForFolder` → `WinFileDlg` with `FDS_CUSTOM`, reading `DID_DIRECTORY_SELECTED` (270)
+   - `ImageList_*` → nothing needed; container records carry `HPOINTER` directly
+
+   Genuinely absent, so design around them: `SHAutoComplete` (no alternative) and the tray
+   (WarpCenter has none; XWorkplace's taskbar does, which would be an add-on dependency).
 
 ### Conversion notes for whoever does the next batch
 
@@ -111,3 +133,15 @@ Every one of these cost real time at least once, and none is catchable by the co
   mishandled, so the column-sort option is disabled.
 - Find/Replace does not transform `\uXXXX` above 255 (needs `UniUconv` against the editor's code
   page — see step 5), and Notepad2's `^c` "replace with clipboard" token is not wired up.
+
+### Not applicable — OS/2 is single-seat
+
+Notepad2 carries Win32 code that has no OS/2 counterpart because the question does not arise: the
+OS/2 desktop is always one person's. LAN Server and HPFS386 carry multi-user *file permissions*, but
+there is no interactive multi-user model. So `GetTokenInformation` / privilege checks,
+`SHGetFolderPath(CSIDL_APPDATA)` and per-user profile paths, and any per-user-vs-machine settings
+split are all N/A rather than unported. The app's `.ini` goes beside the `.EXE`.
+
+Likewise `MonitorFromRect` / `GetMonitorInfo`: every call in Notepad2 is clamping a dialog to the
+work area, and one desktop answers that completely — `pmhelpers.h` already does it with
+`SV_CXSCREEN` / `SV_CYSCREEN`. See the toolkit's `recipes/porting-a-windows-app.md` §7.
