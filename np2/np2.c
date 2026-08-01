@@ -34,6 +34,7 @@
 #include "np2ini.h"
 #include "np2run.h"
 #include "np2browse.h"
+#include "np2print.h"
 #include "np2enc.h"
 #include "pmhelpers.h"
 
@@ -1322,6 +1323,16 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- Syntax scheme and font ---------------------------------------- */
+        case IDM_PRINT:
+            PrintDocument(hwnd, hwndSci,
+                          szFileName[0] ? szFileName : "Untitled",
+                          szFontFace, iFontSize);
+            break;
+
+        case IDM_PAGESETUP:
+            PrintSetup(hwnd);
+            break;
+
         case IDM_BROWSE: {
             CHAR szPick[CCHMAXPATH];
             if (BrowseDlg(hwnd, szBrowseDir, sizeof(szBrowseDir),

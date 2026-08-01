@@ -13,6 +13,9 @@ BEGIN
         MENUITEM "Recent F~iles...", IDM_RECENT
         MENUITEM "Bro~wse...",       IDM_BROWSE
         MENUITEM SEPARATOR
+        MENUITEM "~Print...",        IDM_PRINT
+        MENUITEM "Page Set~up...",   IDM_PAGESETUP
+        MENUITEM SEPARATOR
         MENUITEM "~Read Only",       IDM_READONLY
         SUBMENU "~Encoding", IDM_ENC_MENU
         BEGIN

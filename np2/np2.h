@@ -304,3 +304,7 @@
 #define IDD_BROWSE          560
 #define IDC_BROWSECNR       830
 #define IDC_BROWSEPATH      831
+
+/* Printing */
+#define IDM_PRINT           414
+#define IDM_PAGESETUP       415
