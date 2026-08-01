@@ -46,12 +46,14 @@
 #define INCL_WINMENUS
 #define INCL_WINDIALOGS
 #include <os2.h>
+#include <uconv.h>
 
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
 #include <cmath>
 #include <vector>
+#include <string>
 #include <map>
 #include <memory>
 #include <cstdarg>
@@ -151,6 +153,75 @@ void Font::Release() {
 }
 
 // ---------------------------------------------------------------------------
+// UTF-8 -> GPI code page
+//
+// Scintilla hands the Surface UTF-8 bytes whenever the document is in Unicode
+// mode. GPI draws bytes in the GPI CODE PAGE - one of the three independent
+// code-page scopes a PM process has [os2ref/unicode-conversion.md 9.1] - so
+// passing UTF-8 straight through renders every byte as its own code-page
+// glyph: "cafe-acute" comes out as "caf|(R)". Nothing errors; the text is
+// simply wrong, which is the usual shape of a code-page bug.
+//
+// So text is transcoded at the drawing boundary. Two things make this more
+// than a call to UniUconv:
+//
+//  - Scintilla indexes positions[] by SOURCE byte, and a converted string has
+//    a different length, so the mapping from source byte to converted prefix
+//    length has to be carried along.
+//  - Every byte of a multi-byte sequence must report the SAME x position (the
+//    end of its character), or the caret can land inside a character.
+// ---------------------------------------------------------------------------
+class Utf8Xlat {
+public:
+	std::string out;            // display-code-page bytes
+	std::vector<int> outLenAt;  // outLenAt[i] = bytes of `out` produced by src[0..i]
+
+	void Convert(const char *s, int len, UconvObject conv) {
+		out.clear();
+		outLenAt.assign(len > 0 ? len : 0, 0);
+		int i = 0;
+		while (i < len) {
+			const unsigned char c = static_cast<unsigned char>(s[i]);
+			int n = 1;
+			unsigned long v = c;
+			if (c >= 0xF0)      { n = 4; v = c & 0x07; }
+			else if (c >= 0xE0) { n = 3; v = c & 0x0F; }
+			else if (c >= 0xC0) { n = 2; v = c & 0x1F; }
+			if (i + n > len) { n = 1; v = c; }          // truncated - draw raw
+			for (int k = 1; k < n; k++)
+				v = (v << 6) | (static_cast<unsigned char>(s[i + k]) & 0x3F);
+
+			char buf[8];
+			int produced = 0;
+			if (n == 1 && v < 0x80) {
+				buf[0] = static_cast<char>(v);
+				produced = 1;
+			} else if (conv) {
+				UniChar uc[2];
+				uc[0] = static_cast<UniChar>(v > 0xFFFF ? 0xFFFD : v);
+				UniChar *pIn = uc;
+				void *pOut = buf;
+				size_t cIn = 1, cbOut = sizeof(buf), cSub = 0;
+				if (UniUconvFromUcs(conv, &pIn, &cIn, &pOut, &cbOut, &cSub) == 0 ||
+				    cbOut < sizeof(buf))
+					produced = static_cast<int>(sizeof(buf) - cbOut);
+			}
+			// A character the display code page cannot represent draws as
+			// '?'. That is a real limit of an 8-bit display page, not a bug -
+			// CP850 has no Greek - and showing it is better than dropping the
+			// character silently and shifting everything after it.
+			if (produced <= 0) { buf[0] = '?'; produced = 1; }
+
+			out.append(buf, produced);
+			const int lenNow = static_cast<int>(out.size());
+			for (int k = 0; k < n && i + k < len; k++)
+				outLenAt[i + k] = lenNow;
+			i += n;
+		}
+	}
+};
+
+// ---------------------------------------------------------------------------
 // SurfaceImpl
 // ---------------------------------------------------------------------------
 class SurfaceImpl : public Surface {
@@ -162,6 +233,13 @@ class SurfaceImpl : public Surface {
 	int codePage;
 	FONTMETRICS currentFM;
 	bool haveFM;
+
+	// Conversion object for the GPI code page, created on first use.
+	UconvObject convDisplay;
+	Utf8Xlat xlat;
+	// Returns the bytes to hand GPI, and (for MeasureWidths) the source->output
+	// length map in xlat.outLenAt. In non-Unicode mode this is a pass-through.
+	const char *Displayable(const char *s, int len, int *pOutLen);
 
 	// Set when this Surface owns an off-screen (pixmap) presentation space - see
 	// InitPixMap. The screen case leaves these NULLHANDLE.
@@ -258,7 +336,7 @@ public:
 
 SurfaceImpl::SurfaceImpl()
 	: hps(NULLHANDLE), hdcOwned(NULLHANDLE), hpsOwned(false), surfaceHeight(0),
-	  unicodeMode(false), codePage(0), haveFM(false),
+	  unicodeMode(false), codePage(0), haveFM(false), convDisplay(nullptr),
 	  hbmPix(NULLHANDLE), hbmPixOld(NULLHANDLE), pixmapOwned(false),
 	  nextLcid(1), selectedFont(nullptr) {
 	memset(&currentFM, 0, sizeof(currentFM));
@@ -547,8 +625,10 @@ void SurfaceImpl::DrawTextNoClip(PRectangle rc, Font &font_, XYPOSITION ybase,
 	POINTL start = ToPOINTL(rc.left, ybase);
 	GpiSetColor(hps, ToRGB(fore));
 	GpiSetBackColor(hps, ToRGB(back));
-	GpiCharStringPosAt(hps, &start, &r, CHS_OPAQUE, len,
-		AsPCH(s), nullptr);
+	int cbDraw = 0;
+	const char *pDraw = Displayable(s, len, &cbDraw);
+	GpiCharStringPosAt(hps, &start, &r, CHS_OPAQUE, cbDraw,
+		AsPCH(pDraw), nullptr);
 }
 
 void SurfaceImpl::DrawTextClipped(PRectangle rc, Font &font_, XYPOSITION ybase,
@@ -560,8 +640,10 @@ void SurfaceImpl::DrawTextClipped(PRectangle rc, Font &font_, XYPOSITION ybase,
 	POINTL start = ToPOINTL(rc.left, ybase);
 	GpiSetColor(hps, ToRGB(fore));
 	GpiSetBackColor(hps, ToRGB(back));
-	GpiCharStringPosAt(hps, &start, &r, CHS_OPAQUE | CHS_CLIP, len,
-		AsPCH(s), nullptr);
+	int cbDraw = 0;
+	const char *pDraw = Displayable(s, len, &cbDraw);
+	GpiCharStringPosAt(hps, &start, &r, CHS_OPAQUE | CHS_CLIP, cbDraw,
+		AsPCH(pDraw), nullptr);
 }
 
 void SurfaceImpl::DrawTextTransparent(PRectangle rc, Font &font_, XYPOSITION ybase,
@@ -572,8 +654,10 @@ void SurfaceImpl::DrawTextTransparent(PRectangle rc, Font &font_, XYPOSITION yba
 	POINTL start = ToPOINTL(rc.left, ybase);
 	GpiSetColor(hps, ToRGB(fore));
 	// No CHS_OPAQUE: leave the background alone.
-	GpiCharStringPosAt(hps, &start, nullptr, 0, len,
-		AsPCH(s), nullptr);
+	int cbDraw = 0;
+	const char *pDraw = Displayable(s, len, &cbDraw);
+	GpiCharStringPosAt(hps, &start, nullptr, 0, cbDraw,
+		AsPCH(pDraw), nullptr);
 }
 
 // GpiQueryTextBox(hps, lCount1, pchString, lCount2, aptlPoints)
@@ -583,8 +667,12 @@ XYPOSITION SurfaceImpl::WidthText(Font &font_, const char *s, int len) {
 	if (hps == NULLHANDLE || len <= 0)
 		return 0;
 	SetFont(font_);
+	int cbMeasure = 0;
+	const char *pMeasure = Displayable(s, len, &cbMeasure);
+	if (cbMeasure <= 0)
+		return 0;
 	POINTL apt[TXTBOX_COUNT];
-	if (!GpiQueryTextBox(hps, len, AsPCH(s), TXTBOX_COUNT, apt))
+	if (!GpiQueryTextBox(hps, cbMeasure, AsPCH(pMeasure), TXTBOX_COUNT, apt))
 		return 0;
 	return static_cast<XYPOSITION>(apt[TXTBOX_CONCAT].x);
 }
@@ -604,8 +692,32 @@ void SurfaceImpl::MeasureWidths(Font &font_, const char *s, int len, XYPOSITION 
 			positions[i] = 0;
 		return;
 	}
-	for (int i = 1; i <= len; i++)
-		positions[i - 1] = WidthText(font_, s, i);
+	if (!unicodeMode) {
+		for (int i = 1; i <= len; i++)
+			positions[i - 1] = WidthText(font_, s, i);
+		return;
+	}
+
+	// Unicode: convert ONCE, then measure prefixes of the converted bytes.
+	// Every byte of a multi-byte character reports the same x, which is what
+	// keeps the caret from landing inside a character.
+	SetFont(font_);
+	int cbAll = 0;
+	Displayable(s, len, &cbAll);
+	const std::string conv = xlat.out;
+	const std::vector<int> mapAt = xlat.outLenAt;
+	for (int i = 0; i < len; i++) {
+		const int cb = (i < static_cast<int>(mapAt.size())) ? mapAt[i] : cbAll;
+		if (cb <= 0) {
+			positions[i] = 0;
+			continue;
+		}
+		POINTL apt[TXTBOX_COUNT];
+		if (GpiQueryTextBox(hps, cb, AsPCH(conv.c_str()), TXTBOX_COUNT, apt))
+			positions[i] = static_cast<XYPOSITION>(apt[TXTBOX_CONCAT].x);
+		else
+			positions[i] = (i > 0) ? positions[i - 1] : 0;
+	}
 }
 
 // FONTMETRICS field mapping [DOC-IBM - gpi-fonts-and-metafiles.md 2.3].
@@ -656,6 +768,40 @@ void SurfaceImpl::SetClip(PRectangle rc) {
 
 void SurfaceImpl::FlushCachedState() {
 	haveFM = false;
+}
+
+// Hand GPI bytes it can actually draw. In non-Unicode mode the document's
+// bytes already ARE code-page bytes, so this is a pass-through and costs
+// nothing; only Unicode mode pays for the transcode.
+const char *SurfaceImpl::Displayable(const char *s, int len, int *pOutLen) {
+	if (!unicodeMode || len <= 0) {
+		*pOutLen = len;
+		return s;
+	}
+	if (!convDisplay) {
+		// The GPI code page is the one text is DRAWN in, and is not necessarily
+		// the process code page [os2ref/unicode-conversion.md 9.1]. But
+		// GpiQueryCp on a freshly created PS reports 0 - "the default" - and
+		// on some drivers a value UniMapCpToUcsCp will not map, so the queried
+		// page is a hint and not a guarantee: fall back rather than give up,
+		// because giving up means every non-ASCII character draws as a marker.
+		const unsigned long aTry[3] = {
+			static_cast<unsigned long>((hps != NULLHANDLE) ? GpiQueryCp(hps) : 0),
+			850,          // the usual OS/2 display page
+			437           // and the US default, if this box is set up that way
+		};
+		for (int t = 0; t < 3 && !convDisplay; t++) {
+			UniChar name[32];
+			if (aTry[t] == 0)
+				continue;
+			if (UniMapCpToUcsCp(aTry[t], name, 32) == 0)
+				if (UniCreateUconvObject(name, &convDisplay) != 0)
+					convDisplay = nullptr;
+		}
+	}
+	xlat.Convert(s, len, convDisplay);
+	*pOutLen = static_cast<int>(xlat.out.size());
+	return xlat.out.c_str();
 }
 
 void SurfaceImpl::SetUnicodeMode(bool unicodeMode_) {

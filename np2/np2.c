@@ -33,6 +33,7 @@
 #include "np2style.h"
 #include "np2ini.h"
 #include "np2run.h"
+#include "np2enc.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -88,6 +89,8 @@ static int  iFontSize = 11;
 static CHAR szIniPath[CCHMAXPATH] = "";
 static CHAR szExePath[CCHMAXPATH] = "";   /* for Launch > New Window */
 static CHAR szRunCmd[300] = "";
+static int  iEncoding = NP2ENC_ANSI;      /* the document's file encoding */
+static int  iForceEncoding = -1;          /* Reload As: skip detection once */
 static SWP  swpSaved;                 /* window position, restored at start */
 static BOOL bHaveSavedPos = FALSE;
 
@@ -219,6 +222,36 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     }
     pBuf[cbRead] = '\0';
 
+    /* Detect, then convert into the editor's UTF-8 representation. OS/2
+     * converts from a code set you NAME - it does not guess one - so the
+     * sniff is ours and the transcoding is UniUconv's
+     * [os2ref/unicode-conversion.md 9.2]. */
+    {
+        char *pUtf8 = NULL;
+        ULONG cbUtf8 = 0;
+        CHAR  szEncErr[160] = "";
+
+        iEncoding = (iForceEncoding >= 0) ? iForceEncoding
+                                          : EncDetect(pBuf, cbRead);
+        iForceEncoding = -1;
+
+        if (EncToUtf8(iEncoding, pBuf, cbRead, &pUtf8, &cbUtf8,
+                      szEncErr, sizeof(szEncErr))) {
+            free(pBuf);
+            pBuf = pUtf8;
+            cbRead = cbUtf8;
+            pBuf[cbRead] = '\0';
+        } else {
+            /* Report and fall back to the raw bytes rather than showing an
+             * empty document - a failed conversion must not look like an
+             * empty file. */
+            sprintf(szStatus, "encoding conversion failed (%s) - showing raw bytes",
+                    szEncErr);
+            iEncoding = NP2ENC_ANSI;
+        }
+    }
+
+    Sci(SCI_SETCODEPAGE, MPFROMLONG(SC_CP_UTF8), 0);
     Sci(SCI_SETTEXT, 0, MPFROMP(pBuf));
     Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
     Sci(SCI_SETSAVEPOINT, 0, 0);
@@ -235,8 +268,9 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     if (hwndFrameGlobal != NULLHANDLE)
         SyncMenu(hwndFrameGlobal);
 
-    sprintf(szStatus, "Loaded %lu bytes  [%s]",
-            (unsigned long)cbRead, Style_Name(iScheme));
+    if (!szStatus[0])
+        sprintf(szStatus, "%lu bytes  [%s]  %s",
+                (unsigned long)cbRead, Style_Name(iScheme), EncName(iEncoding));
     return TRUE;
 }
 
@@ -255,6 +289,23 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile)
         return FALSE;
     }
     Sci(SCI_GETTEXT, MPFROMLONG(cbText + 1), MPFROMP(pBuf));
+
+    /* Convert the editor's UTF-8 back out to the document's own encoding. */
+    {
+        char *pOut = NULL;
+        ULONG cbOut = 0;
+        CHAR  szEncErr[160] = "";
+        if (EncFromUtf8(iEncoding, pBuf, (ULONG)cbText, &pOut, &cbOut,
+                        szEncErr, sizeof(szEncErr))) {
+            free(pBuf);
+            pBuf = pOut;
+            cbText = (LONG)cbOut;
+        } else {
+            sprintf(szStatus, "encoding conversion failed (%s) - NOT saved", szEncErr);
+            free(pBuf);
+            return FALSE;
+        }
+    }
 
     /* CREATE_IF_NEW | TRUNCATE_IF_EXISTS is the "save over" pair. */
     rc = DosOpen(pszFile, &hf, &ulAction, 0, FILE_NORMAL,
@@ -399,6 +450,7 @@ static void LoadSettings(void)
     bMarkOccCase     = IniGetInt(SEC_VIEW, "MarkOccurrencesMatchCase", bMarkOccCase);
     bMarkOccWord     = IniGetInt(SEC_VIEW, "MarkOccurrencesMatchWords", bMarkOccWord);
     bSuppressEOLChanged = IniGetInt(SEC_VIEW, "SuppressEOLMessage", bSuppressEOLChanged);
+    iEncoding           = IniGetInt(SEC_VIEW, "DefaultEncoding", iEncoding);
 
     swpSaved.x  = IniGetInt(SEC_WIN, "X",  -1);
     swpSaved.y  = IniGetInt(SEC_WIN, "Y",  -1);
@@ -452,6 +504,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("MarkOccurrencesMatchCase",  bMarkOccCase);
     IniWriteInt("MarkOccurrencesMatchWords", bMarkOccWord);
     IniWriteInt("SuppressEOLMessage",        bSuppressEOLChanged);
+    IniWriteInt("DefaultEncoding",           iEncoding);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
@@ -642,6 +695,11 @@ static void SyncMenu(HWND hwndFrame)
             WinSendMsg(hwndMenu, MM_SETITEMATTR,
                        MPFROM2SHORT(IDM_SCHEME_BASE + i, TRUE),
                        MPFROM2SHORT(MIA_CHECKED, (iScheme == i) ? MIA_CHECKED : 0));
+
+        for (i = 0; i < NP2ENC_COUNT; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                       MPFROM2SHORT(IDM_ENC_ANSI + i, TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, (iEncoding == i) ? MIA_CHECKED : 0));
 
         /* Code Folding is meaningless without a lexer that emits fold levels;
          * grey it out rather than offer a switch that does nothing. */
@@ -1016,6 +1074,37 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             settings.bTabsAsSpaces = !settings.bTabsAsSpaces;
             ApplySettings(hwndSci, &settings);
             SyncMenu(hwndFrame);
+            break;
+
+        /* --- Encoding ------------------------------------------------------ */
+        case IDM_ENC_ANSI:    case IDM_ENC_OEM:     case IDM_ENC_UTF8:
+        case IDM_ENC_UTF8SIG: case IDM_ENC_UCS2LE:  case IDM_ENC_UCS2BE:
+            /* Changes what the NEXT save writes; the buffer is already UTF-8
+             * internally, so nothing needs re-decoding here. */
+            iEncoding = idCmd - IDM_ENC_ANSI;
+            sprintf(szStatus, "encoding set to %s", EncName(iEncoding));
+            ShowStatus();
+            SyncMenu(hwndFrame);
+            break;
+
+        /* Reload As: re-read the same file, overriding detection. */
+        case IDM_RELOAD_ANSI: case IDM_RELOAD_OEM: case IDM_RELOAD_UTF8:
+            if (!szFileName[0]) {
+                WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Nothing to reload.",
+                              (PSZ)"Reload", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+                break;
+            }
+            if (ConfirmDiscard(hwnd)) {
+                CHAR szKeep[CCHMAXPATH];
+                strcpy(szKeep, szFileName);
+                iForceEncoding = (idCmd == IDM_RELOAD_ANSI) ? NP2ENC_ANSI :
+                                 (idCmd == IDM_RELOAD_OEM)  ? NP2ENC_OEM  : NP2ENC_UTF8;
+                szStatus[0] = '\0';
+                LoadFile(hwnd, (PSZ)szKeep);
+                ShowStatus();
+                SyncMenu(hwndFrame);
+                WinInvalidateRect(hwndSci, NULL, TRUE);
+            }
             break;
 
         /* --- Launch -------------------------------------------------------- */

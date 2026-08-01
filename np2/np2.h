@@ -263,3 +263,16 @@
 #define IDM_RUNCMD          384
 #define IDD_RUN             545
 #define IDC_RUNCMD          790
+
+/* Encoding */
+#define IDM_ENC_MENU        390
+#define IDM_ENC_ANSI        391
+#define IDM_ENC_OEM         392
+#define IDM_ENC_UTF8        393
+#define IDM_ENC_UTF8SIG     394
+#define IDM_ENC_UCS2LE      395
+#define IDM_ENC_UCS2BE      396
+#define IDM_RELOAD_MENU     397
+#define IDM_RELOAD_ANSI     398
+#define IDM_RELOAD_OEM      399
+#define IDM_RELOAD_UTF8     400
