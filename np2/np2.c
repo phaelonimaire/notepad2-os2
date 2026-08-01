@@ -120,6 +120,23 @@ static int  iForceEncoding = -1;          /* Reload As: skip detection once */
  * and none of them is one - so it is composed from WC_STATIC panels
  * [os2ref/pm-controls.md 6]. */
 static BOOL bStatusbar = TRUE;
+
+/* Toolbar. PM has no toolbar control class either, so it is a row of
+ * WC_BUTTON children. Giving each button the MENU COMMAND ID as its control
+ * id means its WM_COMMAND lands in the same dispatch the menu uses - there is
+ * no separate toolbar handler, and the two can never disagree. */
+static BOOL bToolbar = TRUE;
+static LONG cyToolbar = 24;
+static const struct { USHORT id; const char *pszText; } aToolButtons[] = {
+    { IDM_NEW, "New" }, { IDM_OPEN, "Open" }, { IDM_SAVE, "Save" },
+    { IDM_UNDO, "Undo" }, { IDM_REDO, "Redo" },
+    { IDM_CUT, "Cut" }, { IDM_COPY, "Copy" }, { IDM_PASTE, "Paste" },
+    { IDM_FIND, "Find" }, { IDM_REPLACE, "Repl" },
+    { IDM_GOTOLINE, "Goto" }, { IDM_WORDWRAP, "Wrap" },
+    { 0, NULL }
+};
+#define NTOOLBUTTONS 12
+static HWND ahwndTool[NTOOLBUTTONS];
 static HWND hwndStatus[4] = { NULLHANDLE, NULLHANDLE, NULLHANDLE, NULLHANDLE };
 static LONG cyStatus = 20;
 static SWP  swpSaved;                 /* window position, restored at start */
@@ -562,6 +579,7 @@ static void LoadSettings(void)
     bSuppressEOLChanged = IniGetInt(SEC_VIEW, "SuppressEOLMessage", bSuppressEOLChanged);
     iEncoding           = IniGetInt(SEC_VIEW, "DefaultEncoding", iEncoding);
     bStatusbar          = IniGetInt(SEC_VIEW, "Statusbar", bStatusbar);
+    bToolbar            = IniGetInt(SEC_VIEW, "Toolbar", bToolbar);
     iTitleFormat        = IniGetInt(SEC_VIEW, "TitleFormat", iTitleFormat);
     iEscFunction        = IniGetInt(SEC_VIEW, "EscFunction", iEscFunction);
     bAlwaysOnTop        = IniGetInt(SEC_VIEW, "AlwaysOnTop", bAlwaysOnTop);
@@ -661,6 +679,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("SuppressEOLMessage",        bSuppressEOLChanged);
     IniWriteInt("DefaultEncoding",           iEncoding);
     IniWriteInt("Statusbar",                 bStatusbar);
+    IniWriteInt("Toolbar",                   bToolbar);
     IniWriteInt("TitleFormat",               iTitleFormat);
     IniWriteInt("EscFunction",               iEscFunction);
     IniWriteInt("AlwaysOnTop",               bAlwaysOnTop);
@@ -854,6 +873,7 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_AUTOINDENT,     &bAutoIndent     },
             { IDM_READONLY,       &bReadOnly       },
             { IDM_STATUSBAR,      &bStatusbar      },
+            { IDM_TOOLBAR,        &bToolbar        },
             { IDM_ALWAYSONTOP,    &bAlwaysOnTop    },
             { IDM_AUTOCLOSETAGS,  &bAutoCloseTags  },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
@@ -967,6 +987,17 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 hwndStatus[i] = WinCreateWindow(hwnd, (PSZ)WC_STATIC, (PSZ)"",
                         WS_VISIBLE | SS_TEXT | DT_LEFT | DT_VCENTER,
                         0, 0, 0, 0, hwnd, HWND_TOP, aId[i], NULL, NULL);
+            /* Toolbar buttons carry menu command ids, so pressing one
+             * produces exactly the WM_COMMAND the menu item would. */
+            {
+                int j;
+                for (j = 0; j < NTOOLBUTTONS && aToolButtons[j].id; j++)
+                    ahwndTool[j] = WinCreateWindow(hwnd, (PSZ)WC_BUTTON,
+                            (PSZ)aToolButtons[j].pszText,
+                            WS_VISIBLE | BS_PUSHBUTTON | BS_NOPOINTERFOCUS,
+                            0, 0, 0, 0, hwnd, HWND_TOP,
+                            aToolButtons[j].id, NULL, NULL);
+            }
             /* Size the bar from the font, not a guess: a bigger system font
              * must not clip the text. */
             {
@@ -982,18 +1013,49 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         }
         return (MRESULT)0;
 
+    /* The client is normally covered by its children, but the strip beside
+     * the toolbar buttons is not - and an unpainted client area comes out
+     * black. Fill it with the system dialog colour. SYSCLR_* are colour
+     * INDICES, which is what WinFillRect wants on a default PS
+     * [os2ref/gpi-drawing.md]. */
+    case WM_PAINT: {
+        RECTL rcl;
+        HPS hpsPaint = WinBeginPaint(hwnd, NULLHANDLE, &rcl);
+        if (hpsPaint != NULLHANDLE) {
+            WinFillRect(hpsPaint, &rcl, SYSCLR_DIALOGBACKGROUND);
+            WinEndPaint(hpsPaint);
+        }
+        return (MRESULT)0;
+    }
+
     case WM_SIZE: {
         LONG cx = (LONG)SHORT1FROMMP(mp2);
         LONG cy = (LONG)SHORT2FROMMP(mp2);
-        LONG cyBar = bStatusbar ? cyStatus : 0;
+        LONG cyBar  = bStatusbar ? cyStatus : 0;
+        LONG cyTool = bToolbar ? cyToolbar : 0;
         int i;
 
         /* Bottom-left origin: the statusbar sits at y = 0 and the editor
          * ABOVE it, which is the opposite of the arithmetic a Win32 layout
          * would use [os2ref/gpi-drawing.md, coordinate origin]. */
         if (hwndSci != NULLHANDLE)
-            WinSetWindowPos(hwndSci, HWND_TOP, 0, cyBar, cx, cy - cyBar,
+            WinSetWindowPos(hwndSci, HWND_TOP, 0, cyBar,
+                            cx, cy - cyBar - cyTool,
                             SWP_SIZE | SWP_MOVE | SWP_SHOW);
+
+        /* The toolbar goes at the TOP, which in bottom-left coordinates is
+         * the LARGEST y - the opposite of a Win32 layout's arithmetic. */
+        for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++) {
+            if (ahwndTool[i] == NULLHANDLE)
+                continue;
+            if (!bToolbar) {
+                WinShowWindow(ahwndTool[i], FALSE);
+                continue;
+            }
+            WinSetWindowPos(ahwndTool[i], HWND_TOP,
+                            4 + i * 48, cy - cyTool + 2, 46, cyTool - 4,
+                            SWP_SIZE | SWP_MOVE | SWP_SHOW);
+        }
         for (i = 0; i < 4; i++) {
             if (hwndStatus[i] == NULLHANDLE)
                 continue;
@@ -1315,6 +1377,17 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_TOOLBAR: {
+            RECTL rcl;
+            bToolbar = !bToolbar;
+            WinQueryWindowRect(hwnd, &rcl);
+            WinSendMsg(hwnd, WM_SIZE, 0,
+                       MPFROM2SHORT((SHORT)(rcl.xRight - rcl.xLeft),
+                                    (SHORT)(rcl.yTop - rcl.yBottom)));
+            SyncMenu(hwndFrame);
+            break;
+        }
+
         case IDM_STATUSBAR: {
             RECTL rcl;
             bStatusbar = !bStatusbar;

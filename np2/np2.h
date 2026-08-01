@@ -328,3 +328,6 @@
 #define IDM_AUTOCLOSETAGS   429
 #define IDM_SAVESETTINGSNOW 430
 #define IDM_OPENINIFILE     431
+
+/* Toolbar */
+#define IDM_TOOLBAR         432
