@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 158 (~64%) |
+| Menu commands | 245 | 161 (~66%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | 5,560 lines |
 
@@ -35,7 +35,8 @@ look impossible. Sized honestly:
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
 | ~~Scheme editor~~ | **Done** — Customize Colours, commit `11fc683` | |
 | ~~Recent Files~~ | **Done** — `WC_LISTBOX` MRU, commit `04f3171`. Per-file icons still want the container | |
-| **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
+| ~~File browser on `WC_CONTAINER`~~ | **Done** — `np2/np2browse.c`, commit `caff65e`. Favorites and Open With can now be built on the same code | |
+| ~~Print / Page Setup~~ | **Written** — commit `1b4ddc0`. **Not fully verified**: this VM has no printer driver, so only the queue-discovery half has ever run. See "not seen working" below | |
 | **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
 
 `scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
@@ -135,9 +136,10 @@ wrc np2.res np2.exe
 
 ### Suggested order from here
 
-1. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control; unblocks Favorites,
-   Open With, and per-file icons in Recent Files.
-2. **Print / Page Setup** — fully documented in `os2ref/printing-spooler.md`, just unwritten.
+1. **Verify printing on a target that has a printer.** The code follows the documented sequence;
+   nothing has ever reached `DevOpenDC`. Install any driver on the VM and re-test.
+2. **Favorites / Open With** — now cheap: both are `np2browse.c`'s container with a different root
+   and a different accept action.
 3. **Toolbar** — owner-drawn; lower value than the statusbar was.
 4. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
 5. **Remaining preference commands** — window-title format, Esc key behaviour and similar
@@ -232,3 +234,17 @@ Fixed in `04f3171`; see the toolkit's `recipes/porting-a-windows-app.md` §5.0.
   back through the queried page, 850, then 437.
 - Sort/align are still byte-oriented (`np2edit.c`); `UniStrcoll`/`UniTransUpper` would make them
   character-correct now that the conversion plumbing exists.
+
+### Verification status — what has NOT been seen working
+
+Everything else described here has been exercised on screen. These have not, and should not be
+read as working:
+
+- **Printing.** The test VM has no printer driver installed and no `\spool` directory, so
+  `SplEnumQueue` correctly reports zero queues and the code stops at its honest-failure message.
+  The queue-discovery path and that message are verified; **`DevOpenDC` onwards has never run.**
+- **Inbound scroll-bar clicks** (`WM_VSCROLL` → `ScrollTo`) — compiled and symmetric, never
+  exercised, because the harness has no mouse injection. Keyboard scrolling is verified.
+
+A status file that says "done" for something nobody has watched work is the same failure as calling
+unwritten work "blocked" — it stops the next person from checking.
