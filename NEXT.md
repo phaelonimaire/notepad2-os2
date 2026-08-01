@@ -8,13 +8,20 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 161 (~66%) |
+| Menu commands | 245 | 166 (~68%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | 5,560 lines |
 
-The 143 commands still missing are whole menus rather than scattered gaps, and the text-editing
-surface itself is essentially complete. See "What is left" below for what each actually requires —
-most of it is ordinary unwritten work, not a platform limitation.
+Counted reproducibly, so the number cannot drift into optimism:
+
+```sh
+# static menu items, minus the (none) placeholder, plus the run-time scheme list
+grep -c '^ *MENUITEM' np2/np2.rc            # excludes SEPARATOR lines by hand
+```
+146 static `MENUITEM`s − 1 placeholder + 21 syntax schemes built at run time = **166**.
+
+What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
+complete. See "What is left" for what each remaining item actually requires.
 
 ## What is left, and what it actually needs
 
@@ -30,6 +37,8 @@ look impossible. Sized honestly:
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
 | ~~Encoding / Reload~~ | **Done** — `np2/np2enc.c` + a UTF-8 drawing path in `PlatPM.cxx`, commit `aa7922e` | |
 | ~~Statusbar~~ | **Done** — four `WC_STATIC` panels | |
+| ~~Favorites / Open With / Desktop Link~~ | **Done** — commit `fc2e14e`; desktop link is a real WPS shadow | |
+| ~~Window title / Esc key / misc preferences~~ | **Done** — commit `793f6e4` | |
 | **Toolbar** | No PM control class — owner-drawn buttons on a composed bar. Lower value than the statusbar was | **Medium** |
 | ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
@@ -138,12 +147,11 @@ wrc np2.res np2.exe
 
 1. **Verify printing on a target that has a printer.** The code follows the documented sequence;
    nothing has ever reached `DevOpenDC`. Install any driver on the VM and re-test.
-2. **Favorites / Open With** — now cheap: both are `np2browse.c`'s container with a different root
-   and a different accept action.
-3. **Toolbar** — owner-drawn; lower value than the statusbar was.
-4. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
-5. **Remaining preference commands** — window-title format, Esc key behaviour and similar
-   single-setting toggles. Mechanical once someone wants them.
+2. **Toolbar** — owner-drawn buttons on a composed bar; there is no PM toolbar class.
+3. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
+4. **The long tail** — Notepad2 has command variants this port folds together or omits: web-search
+   templates, `2nd default scheme`, per-encoding reload variants, "save copy", and similar. Each is
+   small; none is blocked.
 
 ### Command-surface notes
 
