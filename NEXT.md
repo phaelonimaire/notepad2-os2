@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 145 (~59%) |
+| Menu commands | 245 | 155 (~63%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | 5,560 lines |
 
@@ -28,8 +28,9 @@ look impossible. Sized honestly:
 | ~~Mark Occurrences~~ | **Done** — same commit | |
 | ~~Info Box~~ | **Done** — `NP2InfoBox`, session-scoped suppression | |
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
-| **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
-| **Toolbar / statusbar** | No PM control classes for these — compose from `WC_STATIC` and owner-drawn buttons | **Medium** |
+| ~~Encoding / Reload~~ | **Done** — `np2/np2enc.c` + a UTF-8 drawing path in `PlatPM.cxx`, commit `aa7922e` | |
+| ~~Statusbar~~ | **Done** — four `WC_STATIC` panels | |
+| **Toolbar** | No PM control class — owner-drawn buttons on a composed bar. Lower value than the statusbar was | **Medium** |
 | ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
 | **Scheme editor** | Settings persistence first; the schemes themselves are done | **Medium** |
@@ -133,12 +134,12 @@ wrc np2.res np2.exe
 
 ### Suggested order from here
 
-1. **Encoding / Reload** — `UniUconv`; also makes sort and alignment character-correct and enables
-   `\uXXXX` in Find/Replace. 13 commands and 4 dialogs behind it.
-2. **Statusbar** — line/column, encoding, scheme. The more useful half of the toolbar/statusbar item.
-3. **Scheme editor** — now unblocked, since settings persistence landed.
-4. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control.
-5. **Print / Page Setup** — fully documented, just unwritten.
+1. **Scheme editor** — unblocked now that settings persistence and schemes both exist.
+2. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control; unblocks Favorites,
+   Open With and File MRU (4 dialogs).
+3. **Print / Page Setup** — fully documented in `os2ref/printing-spooler.md`, just unwritten.
+4. **Toolbar** — owner-drawn; lower value than the statusbar was.
+5. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
 
 ### Command-surface notes
 
@@ -209,3 +210,16 @@ A program started over SSH is a **detached** process on OS/2 — no keyboard, mo
 Launch menu is untestable that way and will look broken. Drive a real `CMD.EXE` on the guest
 (`Alt+Esc` to it, then `keyboardputscancode`) for anything that starts another program, integrates
 with the Workplace Shell, or cares about session type. See the toolkit's `recipes/setup-test-vm.md`.
+
+### Encoding notes
+
+- The document is held as UTF-8 inside Scintilla whatever the file was, so search, sort and case
+  behave identically across encodings. Round-trip verified byte-identical.
+- **`PlatPM.cxx` transcodes at the drawing boundary.** GPI draws in the GPI code page, so UTF-8
+  handed straight to `GpiCharStringPosAt` renders each byte as its own 8-bit glyph. Characters the
+  display page cannot represent draw as `?` — CP850 has no Greek, and that is a real limit rather
+  than a defect.
+- `GpiQueryCp` is a hint: it can report a value `UniMapCpToUcsCp` will not map, so the code falls
+  back through the queried page, 850, then 437.
+- Sort/align are still byte-oriented (`np2edit.c`); `UniStrcoll`/`UniTransUpper` would make them
+  character-correct now that the conversion plumbing exists.
