@@ -12,6 +12,13 @@ BEGIN
         MENUITEM "Re~vert",          IDM_REVERT
         MENUITEM SEPARATOR
         MENUITEM "~Read Only",       IDM_READONLY
+        SUBMENU "~Launch", IDM_LAUNCH_MENU
+        BEGIN
+            MENUITEM "~New Window",       IDM_NEWWINDOW
+            MENUITEM "~Empty Window",     IDM_EMPTYWINDOW
+            MENUITEM "E~xecute Document", IDM_EXECDOC
+            MENUITEM "~Command...",       IDM_RUNCMD
+        END
         SUBMENU "Line Endin~gs", IDM_EOL_MENU
         BEGIN
             MENUITEM "~Windows (CR+LF)", IDM_EOL_CRLF
@@ -354,6 +361,17 @@ BEGIN
 
         DEFPUSHBUTTON "OK",     DID_OK,     220, 148, 56, 14
         PUSHBUTTON    "Cancel", DID_CANCEL, 220, 130, 56, 14
+    END
+END
+
+DLGTEMPLATE IDD_RUN
+BEGIN
+    DIALOG "Run Command", IDD_RUN, 20, 20, 300, 76, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT      "Command line:", -1,  8, 56, 120, 8
+        ENTRYFIELD "", IDC_RUNCMD,       8, 40, 220, 10, ES_MARGIN | ES_AUTOSCROLL
+        DEFPUSHBUTTON "OK",     DID_OK,     238, 54, 54, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL, 238, 36, 54, 14
     END
 END
 

@@ -254,3 +254,12 @@
 #define IDM_SCHEME_MENU     370
 #define IDM_VIEW_FONT       371
 #define IDM_SCHEME_BASE     900
+
+/* Launch */
+#define IDM_LAUNCH_MENU     380
+#define IDM_NEWWINDOW       381
+#define IDM_EMPTYWINDOW     382
+#define IDM_EXECDOC         383
+#define IDM_RUNCMD          384
+#define IDD_RUN             545
+#define IDC_RUNCMD          790

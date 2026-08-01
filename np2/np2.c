@@ -13,6 +13,14 @@
 #define INCL_WINSTDFILE      /* WinFileDlg / FILEDLG - os2ref/resources-and-dialogs.md 10 */
 #include <os2.h>
 #include <stdio.h>
+
+/* kLIBC's extensions (_execname and friends) are declared in <stdlib.h> behind
+ *   #if (!defined(__STRICT_ANSI__) && !defined(_POSIX_SOURCE)) || defined(__USE_EMX)
+ * and -std=c++11 defines __STRICT_ANSI__ - so the declaration is present in the
+ * header, visibly, and still not in scope. The symptom is "not declared in this
+ * scope" for a function you can point at. __USE_EMX is the header's own opt-in;
+ * -std=gnu++11 would work too but changes the dialect for everything. */
+#define __USE_EMX
 #include <stdlib.h>
 #include <string.h>
 
@@ -24,6 +32,7 @@
 #include "np2cmd.h"
 #include "np2style.h"
 #include "np2ini.h"
+#include "np2run.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -77,6 +86,8 @@ static CHAR szFontFace[FACESIZE] = "Courier";
 static int  iFontSize = 11;
 
 static CHAR szIniPath[CCHMAXPATH] = "";
+static CHAR szExePath[CCHMAXPATH] = "";   /* for Launch > New Window */
+static CHAR szRunCmd[300] = "";
 static SWP  swpSaved;                 /* window position, restored at start */
 static BOOL bHaveSavedPos = FALSE;
 
@@ -1007,6 +1018,36 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             SyncMenu(hwndFrame);
             break;
 
+        /* --- Launch -------------------------------------------------------- */
+        case IDM_NEWWINDOW:
+            /* A second editor on the current file. Independent, not a child
+             * session, so it outlives this one [os2ref/session-manager.md]. */
+            RunProgram(hwnd, szExePath, szFileName[0] ? szFileName : NULL, TRUE);
+            break;
+        case IDM_EMPTYWINDOW:
+            RunProgram(hwnd, szExePath, NULL, TRUE);
+            break;
+        case IDM_EXECDOC:
+            RunOpenDocument(hwnd, szFileName);
+            break;
+        case IDM_RUNCMD:
+            if (RunCommandDlg(hwnd, szRunCmd, sizeof(szRunCmd)) && szRunCmd[0]) {
+                /* Split the command from its arguments at the first blank -
+                 * DosStartSession takes them separately, unlike a shell. */
+                CHAR szPgm[CCHMAXPATH];
+                const char *pArgs = NULL;
+                char *pSpace;
+                strncpy(szPgm, szRunCmd, sizeof(szPgm) - 1);
+                szPgm[sizeof(szPgm) - 1] = '\0';
+                pSpace = strchr(szPgm, ' ');
+                if (pSpace) {
+                    *pSpace = '\0';
+                    pArgs = szRunCmd + (pSpace - szPgm) + 1;
+                }
+                RunProgram(hwnd, szPgm, pArgs, FALSE);
+            }
+            break;
+
         /* --- Syntax scheme and font ---------------------------------------- */
         case IDM_VIEW_FONT:
             if (Style_ChooseFont(hwnd, szFontFace, sizeof(szFontFace), &iFontSize))
@@ -1079,7 +1120,19 @@ int main(int argc, char *argv[])
 
     /* Settings live beside the .EXE - OS/2 is single-seat and has no per-user
      * application-data directory [recipes/porting-a-windows-app.md 7.1]. */
-    IniResolvePath(argc > 0 ? argv[0] : NULL, szIniPath, sizeof(szIniPath));
+    /* argv[0] is whatever the shell typed - "./np2.exe" from a kLIBC shell -
+     * and DosStartSession rejects that with ERROR_SMG_INVALID_CALL (418)
+     * rather than resolving it. kLIBC's _execname gives the real, fully
+     * qualified path of the running program; argv[0] is only a fallback. */
+    if (_execname(szExePath, sizeof(szExePath)) != 0) {
+        szExePath[0] = '\0';
+        if (argc > 0 && argv[0]) {
+            strncpy(szExePath, argv[0], sizeof(szExePath) - 1);
+            szExePath[sizeof(szExePath) - 1] = '\0';
+        }
+    }
+    IniResolvePath(szExePath[0] ? szExePath : (argc > 0 ? argv[0] : NULL),
+                   szIniPath, sizeof(szIniPath));
     LoadSettings();
 
     Scintilla_RegisterClasses((void *)hab);
