@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 137 (~56%) |
+| Menu commands | 245 | 145 (~59%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | 5,560 lines |
 
@@ -27,11 +27,11 @@ look impossible. Sized honestly:
 | ~~Line Endings~~ | **Done** — commit `1d75221` | |
 | ~~Mark Occurrences~~ | **Done** — same commit | |
 | ~~Info Box~~ | **Done** — `NP2InfoBox`, session-scoped suppression | |
-| **Launch / Run** (7) | `DosStartSession` / `DosExecPgm` (`os2ref/session-manager.md`) | **Small** |
 | **Page Setup + Print** | `DevOpenDC` + `DevEscape` brackets + `DevPostDeviceModes`, fully documented in `os2ref/printing-spooler.md` | **Medium** |
 | **Encoding / Reload** (13) | `UniUconv` conversion. API exists and is documented; only BOM-less *detection* must be hand-written | **Medium** |
 | **Toolbar / statusbar** | No PM control classes for these — compose from `WC_STATIC` and owner-drawn buttons | **Medium** |
-| **Settings persistence** | An app-owned text `.ini` beside the `.EXE`, read at start and written on exit. **Three features already wait on it** — syntax schemes, `NP2InfoBox` suppression, window position — so this is the highest-leverage medium item, not the dullest | **Medium** |
+| ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
+| ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
 | **Scheme editor** | Settings persistence first; the schemes themselves are done | **Medium** |
 | **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
 | **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
@@ -78,10 +78,14 @@ g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /t
 # the app
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
-    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
+    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe
 ```
 
+> **`np2.def` is not optional either.** Without `NAME np2 WINDOWAPI` the executable is not marked
+> as a PM application, and it then runs from some sessions and exits instantly and silently from
+> others — it worked over SSH for an entire session before anyone started it from `CMD.EXE`.
+>
 > **`-DSCI_LEXER` is not optional, and omitting it fails silently.** `case SCI_SETLEXER` lives
 > inside `#ifdef SCI_LEXER` in `ScintillaBase.cxx`. Without the define, all 106 lexer objects still
 > compile, still link, `Catalogue.o` still links, `SCI_SETLEXER` still returns cleanly — and every
@@ -129,12 +133,12 @@ wrc np2.res np2.exe
 
 ### Suggested order from here
 
-1. **Settings persistence** — smallest thing with the largest unlock; three features are waiting.
-2. **Launch / Run** — `DosStartSession`, an afternoon.
-3. **Encoding / Reload** — `UniUconv`; also makes sort and alignment character-correct and enables
-   `\uXXXX` in Find/Replace.
-4. **Toolbar / statusbar** — the statusbar is the more useful half (line/column, encoding, scheme).
-5. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control.
+1. **Encoding / Reload** — `UniUconv`; also makes sort and alignment character-correct and enables
+   `\uXXXX` in Find/Replace. 13 commands and 4 dialogs behind it.
+2. **Statusbar** — line/column, encoding, scheme. The more useful half of the toolbar/statusbar item.
+3. **Scheme editor** — now unblocked, since settings persistence landed.
+4. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control.
+5. **Print / Page Setup** — fully documented, just unwritten.
 
 ### Command-surface notes
 
@@ -197,3 +201,11 @@ split are all N/A rather than unported. The app's `.ini` goes beside the `.EXE`.
 Likewise `MonitorFromRect` / `GetMonitorInfo`: every call in Notepad2 is clamping a dialog to the
 work area, and one desktop answers that completely — `pmhelpers.h` already does it with
 `SV_CXSCREEN` / `SV_CYSCREEN`. See the toolkit's `recipes/porting-a-windows-app.md` §7.
+
+### Testing note: SSH cannot exercise everything
+
+A program started over SSH is a **detached** process on OS/2 — no keyboard, mouse or screen — and
+`DosStartSession` returns `ERROR_SMG_INVALID_CALL` (418) from a detached process. So the whole
+Launch menu is untestable that way and will look broken. Drive a real `CMD.EXE` on the guest
+(`Alt+Esc` to it, then `keyboardputscancode`) for anything that starts another program, integrates
+with the Workplace Shell, or cares about session type. See the toolkit's `recipes/setup-test-vm.md`.
