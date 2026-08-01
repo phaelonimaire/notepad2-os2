@@ -291,3 +291,10 @@
 #define IDC_SLOTCOLOUR      811
 #define IDC_SLOTBOLD        812
 #define IDC_SLOTPREVIEW     813
+
+/* Recent files */
+#define IDM_RECENT          412
+#define IDD_RECENT          555
+#define IDC_RECENTLIST      820
+#define IDC_RECENTREMOVE    821
+#define IDC_RECENTCLEAR     822

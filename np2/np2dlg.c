@@ -839,3 +839,116 @@ BOOL EditSchemeConfigDlg(HWND hwndOwner)
     return (BOOL)(WinDlgBox(HWND_DESKTOP, hwndOwner, SchemeConfigDlgProc,
                             NULLHANDLE, IDD_STYLECONFIG, NULL) == DID_OK);
 }
+
+/*--------------------------------------------------------------------------
+ * Recent files
+ *
+ * Notepad2's File MRU dialog is a shell listview with per-file icons, which
+ * needs Dlapi.c. A most-recently-used list is fundamentally a list of paths,
+ * so this is a WC_LISTBOX - the whole feature, minus the icons, without
+ * waiting on the file browser. The icons are the part that needs
+ * WinLoadFileIcon and a container; see NEXT.md.
+ *------------------------------------------------------------------------*/
+
+void MruAdd(char aMru[NP2_MRU_MAX][CCHMAXPATH], int *pcMru, const char *pszFile)
+{
+    int i, j;
+    if (!pszFile || !pszFile[0])
+        return;
+
+    /* Already present: promote it rather than duplicating. */
+    for (i = 0; i < *pcMru; i++) {
+        if (strcmp(aMru[i], pszFile) == 0) {
+            CHAR tmp[CCHMAXPATH];
+            strcpy(tmp, aMru[i]);
+            for (j = i; j > 0; j--)
+                strcpy(aMru[j], aMru[j - 1]);
+            strcpy(aMru[0], tmp);
+            return;
+        }
+    }
+    if (*pcMru < NP2_MRU_MAX)
+        (*pcMru)++;
+    for (j = *pcMru - 1; j > 0; j--)
+        strcpy(aMru[j], aMru[j - 1]);
+    strncpy(aMru[0], pszFile, CCHMAXPATH - 1);
+    aMru[0][CCHMAXPATH - 1] = '\0';
+}
+
+typedef struct _mruarg {
+    char (*aMru)[CCHMAXPATH];
+    int  *pcMru;
+    char *pszPick;
+    int   cchPick;
+} MRUARG;
+
+static void MruFill(HWND hwnd, MRUARG *pma)
+{
+    int i;
+    WinSendDlgItemMsg(hwnd, IDC_RECENTLIST, LM_DELETEALL, 0, 0);
+    for (i = 0; i < *pma->pcMru; i++)
+        WinSendDlgItemMsg(hwnd, IDC_RECENTLIST, LM_INSERTITEM,
+                          MPFROMSHORT(LIT_END), MPFROMP(pma->aMru[i]));
+    if (*pma->pcMru > 0)
+        WinSendDlgItemMsg(hwnd, IDC_RECENTLIST, LM_SELECTITEM,
+                          MPFROMSHORT(0), MPFROMSHORT(TRUE));
+}
+
+static MRESULT EXPENTRY RecentDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    static MRUARG *pma;
+
+    switch (msg) {
+    case WM_INITDLG:
+        pma = (MRUARG *)PVOIDFROMMP(mp2);
+        MruFill(hwnd, pma);
+        PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
+        return (MRESULT)FALSE;
+
+    case WM_COMMAND: {
+        const SHORT sel = (SHORT)LONGFROMMR(WinSendDlgItemMsg(hwnd, IDC_RECENTLIST,
+                              LM_QUERYSELECTION, MPFROMSHORT(LIT_FIRST), 0));
+        switch (SHORT1FROMMP(mp1)) {
+        case DID_OK:
+            if (sel != LIT_NONE && sel < *pma->pcMru) {
+                strncpy(pma->pszPick, pma->aMru[sel], pma->cchPick - 1);
+                pma->pszPick[pma->cchPick - 1] = '\0';
+                WinDismissDlg(hwnd, DID_OK);
+            }
+            return (MRESULT)0;
+
+        case IDC_RECENTREMOVE:
+            if (sel != LIT_NONE && sel < *pma->pcMru) {
+                int j;
+                for (j = sel; j < *pma->pcMru - 1; j++)
+                    strcpy(pma->aMru[j], pma->aMru[j + 1]);
+                (*pma->pcMru)--;
+                MruFill(hwnd, pma);
+            }
+            return (MRESULT)0;
+
+        case IDC_RECENTCLEAR:
+            *pma->pcMru = 0;
+            MruFill(hwnd, pma);
+            return (MRESULT)0;
+
+        case DID_CANCEL:
+            WinDismissDlg(hwnd, DID_CANCEL);
+            return (MRESULT)0;
+        }
+        return (MRESULT)0;
+    }
+    }
+    return WinDefDlgProc(hwnd, msg, mp1, mp2);
+}
+
+BOOL EditRecentDlg(HWND hwndOwner, char aMru[NP2_MRU_MAX][CCHMAXPATH],
+                   int *pcMru, char *pszPick, int cchPick)
+{
+    MRUARG ma;
+    ma.aMru = aMru; ma.pcMru = pcMru;
+    ma.pszPick = pszPick; ma.cchPick = cchPick;
+    pszPick[0] = '\0';
+    return (BOOL)(WinDlgBox(HWND_DESKTOP, hwndOwner, RecentDlgProc, NULLHANDLE,
+                            IDD_RECENT, &ma) == DID_OK && pszPick[0] != '\0');
+}

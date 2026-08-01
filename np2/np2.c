@@ -89,6 +89,22 @@ static int  iFontSize = 11;
 static CHAR szIniPath[CCHMAXPATH] = "";
 static CHAR szExePath[CCHMAXPATH] = "";   /* for Launch > New Window */
 static CHAR szRunCmd[300] = "";
+static CHAR aMru[NP2_MRU_MAX][CCHMAXPATH];
+static int  cMru = 0;
+
+/* An MRU entry must be fully qualified or it only reopens from the directory
+ * it was first opened in - "demo.c" from a command line is a real example.
+ * DosQueryPathInfo with FIL_QUERYFULLNAME is the documented OS/2 way to
+ * resolve one [os2ref/file-io.md]. */
+static void MruAddQualified(const char *pszFile)
+{
+    CHAR szFull[CCHMAXPATH];
+    if (DosQueryPathInfo((PSZ)pszFile, FIL_QUERYFULLNAME,
+                         szFull, sizeof(szFull)) == NO_ERROR && szFull[0])
+        MruAdd(aMru, &cMru, szFull);
+    else
+        MruAdd(aMru, &cMru, pszFile);
+}
 static int  iEncoding = NP2ENC_ANSI;      /* the document's file encoding */
 static int  iForceEncoding = -1;          /* Reload As: skip detection once */
 
@@ -304,6 +320,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     free(pBuf);
 
     strcpy(szFileName, (char *)pszFile);
+    MruAddQualified(szFileName);
 
     /* Pick the scheme from the extension, as Notepad2 does on open. */
     iScheme = Style_MatchFromFile(szFileName);
@@ -380,6 +397,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile)
 
     Sci(SCI_SETSAVEPOINT, 0, 0);
     strcpy(szFileName, (char *)pszFile);
+    MruAddQualified(szFileName);
     sprintf(szStatus, "Saved %lu bytes to %s", (unsigned long)cbWritten, pszFile);
     return TRUE;
 }
@@ -518,6 +536,19 @@ static void LoadSettings(void)
         }
     }
 
+    cMru = 0;
+    {
+        int i;
+        for (i = 0; i < NP2_MRU_MAX; i++) {
+            CHAR szKey[32], szVal[CCHMAXPATH];
+            sprintf(szKey, "File%d", i);
+            IniGetStr("Recent", szKey, "", szVal, sizeof(szVal));
+            if (!szVal[0])
+                break;
+            strcpy(aMru[cMru++], szVal);
+        }
+    }
+
     IniGetStr(SEC_FIND, "Find", "", efrData.szFind, sizeof(efrData.szFind));
     IniGetStr(SEC_FIND, "Replace", "", efrData.szReplace, sizeof(efrData.szReplace));
     efrData.fuFlags      = IniGetInt(SEC_FIND, "Flags", 0);
@@ -590,6 +621,16 @@ static void SaveSettings(HWND hwndFrame)
             sprintf(szVal, "%06lX,%d,%s", (unsigned long)Style_SlotColour(i),
                     Style_SlotBold(i) ? 1 : 0, Style_SlotName(i));
             IniWriteStr(szKey, szVal);
+        }
+    }
+
+    IniWriteSection("Recent");
+    {
+        int i;
+        for (i = 0; i < cMru; i++) {
+            CHAR szKey[32];
+            sprintf(szKey, "File%d", i);
+            IniWriteStr(szKey, aMru[i]);
         }
     }
 
@@ -1277,6 +1318,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- Syntax scheme and font ---------------------------------------- */
+        case IDM_RECENT: {
+            CHAR szPick[CCHMAXPATH];
+            if (EditRecentDlg(hwnd, aMru, &cMru, szPick, sizeof(szPick))) {
+                if (ConfirmDiscard(hwnd)) {
+                    szStatus[0] = '\0';
+                    LoadFile(hwnd, (PSZ)szPick);
+                    ShowStatus();
+                    SyncMenu(hwndFrame);
+                    WinInvalidateRect(hwndSci, NULL, TRUE);
+                }
+            }
+            break;
+        }
+
         case IDM_SCHEMECONFIG:
             if (EditSchemeConfigDlg(hwnd))
                 ApplyScheme(hwndFrame);      /* re-apply so it is visible now */

@@ -10,6 +10,7 @@ BEGIN
         MENUITEM "~Save\tCtrl+S",    IDM_SAVE
         MENUITEM "Save ~as...",      IDM_SAVEAS
         MENUITEM "Re~vert",          IDM_REVERT
+        MENUITEM "Recent F~iles...", IDM_RECENT
         MENUITEM SEPARATOR
         MENUITEM "~Read Only",       IDM_READONLY
         SUBMENU "~Encoding", IDM_ENC_MENU
@@ -378,6 +379,21 @@ BEGIN
 
         DEFPUSHBUTTON "OK",     DID_OK,     220, 148, 56, 14
         PUSHBUTTON    "Cancel", DID_CANCEL, 220, 130, 56, 14
+    END
+END
+
+DLGTEMPLATE IDD_RECENT
+BEGIN
+    DIALOG "Recent Files", IDD_RECENT, 20, 20, 340, 180, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Recently opened files:", -1, 8, 162, 160, 8
+        CONTROL "", IDC_RECENTLIST, 8, 40, 250, 116, WC_LISTBOX,
+                LS_NOADJUSTPOS | LS_HORZSCROLL | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        DEFPUSHBUTTON "~Open",   DID_OK,           268, 142, 62, 14
+        PUSHBUTTON    "~Remove", IDC_RECENTREMOVE, 268, 124, 62, 14
+        PUSHBUTTON    "~Clear",  IDC_RECENTCLEAR,  268, 106, 62, 14
+        PUSHBUTTON    "Cancel",  DID_CANCEL,       268,  84, 62, 14
     END
 END
 

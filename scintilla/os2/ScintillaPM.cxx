@@ -286,7 +286,18 @@ void ScintillaPM::Paint(HPS hps, const RECTL &rcPaint) {
 
 	Editor::Paint(surfaceWindow.get(), rcPaintSci);
 	surfaceWindow->Release();
+
+	// Scintilla sets paintState = paintAbandoned when the area it was given
+	// turns out to be insufficient - new text, restyling, a brace highlight
+	// outside the update rect. The platform layer is then REQUIRED to repaint;
+	// if it does not, the parts outside the original rect keep their previous
+	// contents and the window shows a mixture of the old and new documents.
+	// The symptom is a correct first line under a stale rest of the screen,
+	// which reads as a load bug rather than a paint one.
+	const bool abandoned = (paintState == paintAbandoned);
 	paintState = notPainting;
+	if (abandoned)
+		WinInvalidateRect(hwnd, nullptr, FALSE);
 }
 
 // ---------------------------------------------------------------------------

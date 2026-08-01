@@ -62,4 +62,11 @@ void NP2InfoBox(HWND hwndOwner, const char *pszText, const char *pszCaption,
  * user accepted changes, so the caller can re-apply and persist. */
 BOOL EditSchemeConfigDlg(HWND hwndOwner);
 
+/* Recent files. The caller owns the list; the dialog edits it in place and
+ * writes the chosen path into pszPick. */
+#define NP2_MRU_MAX 16
+BOOL EditRecentDlg(HWND hwndOwner, char aMru[NP2_MRU_MAX][CCHMAXPATH],
+                   int *pcMru, char *pszPick, int cchPick);
+void MruAdd(char aMru[NP2_MRU_MAX][CCHMAXPATH], int *pcMru, const char *pszFile);
+
 #endif /* NP2DLG_H */
