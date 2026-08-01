@@ -23,6 +23,7 @@
 #include "np2dlg.h"
 #include "np2cmd.h"
 #include "np2style.h"
+#include "np2ini.h"
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
@@ -74,6 +75,10 @@ static BOOL bSuppressEOLChanged = FALSE;
 static int  iScheme = 0;
 static CHAR szFontFace[FACESIZE] = "Courier";
 static int  iFontSize = 11;
+
+static CHAR szIniPath[CCHMAXPATH] = "";
+static SWP  swpSaved;                 /* window position, restored at start */
+static BOOL bHaveSavedPos = FALSE;
 
 /* Commands that are nothing but a Scintilla message. Keeping them in a table
  * rather than the switch is the difference between a readable dispatch and
@@ -340,6 +345,125 @@ static void ApplyView(void)
     Sci(SCI_SETREADONLY,   MPFROMLONG(bReadOnly), 0);
 }
 
+/*--------------------------------------------------------------------------
+ * Settings persistence.  See np2ini.c - an app's own config file is text and
+ * ordinary file I/O; Prf* is for OS2.INI/OS2SYS.INI only.
+ *------------------------------------------------------------------------*/
+
+#define SEC_SET  "Settings"
+#define SEC_VIEW "View"
+#define SEC_WIN  "Window"
+#define SEC_FIND "Search"
+
+static void LoadSettings(void)
+{
+    if (!IniLoad(szIniPath))
+        return;                            /* first run - defaults stand */
+
+    settings.iTabWidth           = (SHORT)IniGetInt(SEC_SET, "TabWidth", settings.iTabWidth);
+    settings.iIndentWidth        = (SHORT)IniGetInt(SEC_SET, "IndentWidth", settings.iIndentWidth);
+    settings.bTabsAsSpaces       = IniGetInt(SEC_SET, "TabsAsSpaces", settings.bTabsAsSpaces);
+    settings.bTabIndents         = IniGetInt(SEC_SET, "TabIndents", settings.bTabIndents);
+    settings.bBackspaceUnindents = IniGetInt(SEC_SET, "BackspaceUnindents", settings.bBackspaceUnindents);
+    settings.iLongLinesLimit     = (SHORT)IniGetInt(SEC_SET, "LongLinesLimit", settings.iLongLinesLimit);
+    settings.bLongLineBackground = IniGetInt(SEC_SET, "LongLineMode", settings.bLongLineBackground);
+    settings.iWordWrapMode       = (SHORT)IniGetInt(SEC_SET, "WordWrapMode", settings.iWordWrapMode);
+    settings.iWordWrapIndent     = (SHORT)IniGetInt(SEC_SET, "WordWrapIndent", settings.iWordWrapIndent);
+    settings.iWordWrapSymbols    = (SHORT)IniGetInt(SEC_SET, "WordWrapSymbols", settings.iWordWrapSymbols);
+    settings.bShowWordWrapSymbols = IniGetInt(SEC_SET, "ShowWordWrapSymbols", settings.bShowWordWrapSymbols);
+    IniGetStr(SEC_SET, "FontFace", szFontFace, szFontFace, sizeof(szFontFace));
+    iFontSize = IniGetInt(SEC_SET, "FontSize", iFontSize);
+
+    bWordWrap        = IniGetInt(SEC_VIEW, "WordWrap", bWordWrap);
+    bLineNumbers     = IniGetInt(SEC_VIEW, "LineNumbers", bLineNumbers);
+    bLongLineMarker  = IniGetInt(SEC_VIEW, "LongLineMarker", bLongLineMarker);
+    bIndentGuides    = IniGetInt(SEC_VIEW, "IndentGuides", bIndentGuides);
+    bShowWhitespace  = IniGetInt(SEC_VIEW, "ShowWhitespace", bShowWhitespace);
+    bShowEOLs        = IniGetInt(SEC_VIEW, "ShowEOLs", bShowEOLs);
+    bHiliteCurLine   = IniGetInt(SEC_VIEW, "HighlightCurrentLine", bHiliteCurLine);
+    bSelMargin       = IniGetInt(SEC_VIEW, "SelectionMargin", bSelMargin);
+    bFolding         = IniGetInt(SEC_VIEW, "CodeFolding", bFolding);
+    bAutoIndent      = IniGetInt(SEC_VIEW, "AutoIndent", bAutoIndent);
+    iMarkOccurrences = IniGetInt(SEC_VIEW, "MarkOccurrences", iMarkOccurrences);
+    bMarkOccCase     = IniGetInt(SEC_VIEW, "MarkOccurrencesMatchCase", bMarkOccCase);
+    bMarkOccWord     = IniGetInt(SEC_VIEW, "MarkOccurrencesMatchWords", bMarkOccWord);
+    bSuppressEOLChanged = IniGetInt(SEC_VIEW, "SuppressEOLMessage", bSuppressEOLChanged);
+
+    swpSaved.x  = IniGetInt(SEC_WIN, "X",  -1);
+    swpSaved.y  = IniGetInt(SEC_WIN, "Y",  -1);
+    swpSaved.cx = IniGetInt(SEC_WIN, "CX", -1);
+    swpSaved.cy = IniGetInt(SEC_WIN, "CY", -1);
+    bHaveSavedPos = (BOOL)(swpSaved.cx > 0 && swpSaved.cy > 0);
+
+    IniGetStr(SEC_FIND, "Find", "", efrData.szFind, sizeof(efrData.szFind));
+    IniGetStr(SEC_FIND, "Replace", "", efrData.szReplace, sizeof(efrData.szReplace));
+    efrData.fuFlags      = IniGetInt(SEC_FIND, "Flags", 0);
+    efrData.bTransformBS = IniGetInt(SEC_FIND, "TransformBackslashes", 0);
+    efrData.bNoFindWrap  = IniGetInt(SEC_FIND, "NoWrap", 0);
+
+    IniFree();
+}
+
+static void SaveSettings(HWND hwndFrame)
+{
+    SWP swp;
+
+    if (!IniBeginWrite(szIniPath))
+        return;
+
+    IniWriteSection(SEC_SET);
+    IniWriteInt("TabWidth",            settings.iTabWidth);
+    IniWriteInt("IndentWidth",         settings.iIndentWidth);
+    IniWriteInt("TabsAsSpaces",        settings.bTabsAsSpaces);
+    IniWriteInt("TabIndents",          settings.bTabIndents);
+    IniWriteInt("BackspaceUnindents",  settings.bBackspaceUnindents);
+    IniWriteInt("LongLinesLimit",      settings.iLongLinesLimit);
+    IniWriteInt("LongLineMode",        settings.bLongLineBackground);
+    IniWriteInt("WordWrapMode",        settings.iWordWrapMode);
+    IniWriteInt("WordWrapIndent",      settings.iWordWrapIndent);
+    IniWriteInt("WordWrapSymbols",     settings.iWordWrapSymbols);
+    IniWriteInt("ShowWordWrapSymbols", settings.bShowWordWrapSymbols);
+    IniWriteStr("FontFace",            szFontFace);
+    IniWriteInt("FontSize",            iFontSize);
+
+    IniWriteSection(SEC_VIEW);
+    IniWriteInt("WordWrap",                  bWordWrap);
+    IniWriteInt("LineNumbers",               bLineNumbers);
+    IniWriteInt("LongLineMarker",            bLongLineMarker);
+    IniWriteInt("IndentGuides",              bIndentGuides);
+    IniWriteInt("ShowWhitespace",            bShowWhitespace);
+    IniWriteInt("ShowEOLs",                  bShowEOLs);
+    IniWriteInt("HighlightCurrentLine",      bHiliteCurLine);
+    IniWriteInt("SelectionMargin",           bSelMargin);
+    IniWriteInt("CodeFolding",               bFolding);
+    IniWriteInt("AutoIndent",                bAutoIndent);
+    IniWriteInt("MarkOccurrences",           iMarkOccurrences);
+    IniWriteInt("MarkOccurrencesMatchCase",  bMarkOccCase);
+    IniWriteInt("MarkOccurrencesMatchWords", bMarkOccWord);
+    IniWriteInt("SuppressEOLMessage",        bSuppressEOLChanged);
+
+    /* Read the frame's position back rather than tracking it: WinQueryWindowPos
+     * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
+     * WinSetWindowPos's arguments - so it is assigned by NAME here, never
+     * positionally [os2ref/pm-window-messaging.md]. */
+    if (hwndFrame != NULLHANDLE && WinQueryWindowPos(hwndFrame, &swp)) {
+        IniWriteSection(SEC_WIN);
+        IniWriteInt("X",  swp.x);
+        IniWriteInt("Y",  swp.y);
+        IniWriteInt("CX", swp.cx);
+        IniWriteInt("CY", swp.cy);
+    }
+
+    IniWriteSection(SEC_FIND);
+    IniWriteStr("Find",                 efrData.szFind);
+    IniWriteStr("Replace",              efrData.szReplace);
+    IniWriteInt("Flags",                (int)efrData.fuFlags);
+    IniWriteInt("TransformBackslashes", efrData.bTransformBS);
+    IniWriteInt("NoWrap",               efrData.bNoFindWrap);
+
+    IniEndWrite();
+}
+
 /* Push the current scheme and font into the control. Called on load, on a
  * manual scheme change, and after a font change - all three have to go
  * through here, or the syntax styles keep the old font. */
@@ -578,7 +702,18 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
      * caret or selection change, which is exactly when the occurrence marks
      * need recomputing. */
     case WM_CONTROL:
-        if (SHORT1FROMMP(mp1) == 2000 && iMarkOccurrences) {
+        /* ScintillaPM multiplexes TWO different notifications through
+         * WM_CONTROL, and mp2 means something different in each:
+         *
+         *   NotifyParent()  code 0            mp2 = SCNotification *
+         *   NotifyChange()  code SCEN_CHANGE  mp2 = the control's HWND
+         *
+         * So the notify code in mp1's high half must be checked BEFORE mp2 is
+         * dereferenced - casting an HWND to SCNotification* and reading
+         * ->nmhdr.code is a segfault. It stays dormant while the guarding
+         * feature is off, which is how this survived until Mark Occurrences
+         * was first restored from the settings file as non-zero. */
+        if (SHORT1FROMMP(mp1) == 2000 && SHORT2FROMMP(mp1) == 0 && iMarkOccurrences) {
             SCNotification *pscn = (SCNotification *)PVOIDFROMMP(mp2);
             if (pscn && pscn->nmhdr.code == SCN_UPDATEUI)
                 EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
@@ -928,7 +1063,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     return WinDefWindowProc(hwnd, msg, mp1, mp2);
 }
 
-int main(void)
+int main(int argc, char *argv[])
 {
     HAB   hab = WinInitialize(0);
     HMQ   hmq = WinCreateMsgQueue(hab, 0);
@@ -942,6 +1077,11 @@ int main(void)
     bWordWrap    = settings.fWordWrap;
     bLineNumbers = settings.bLineNumbers;
 
+    /* Settings live beside the .EXE - OS/2 is single-seat and has no per-user
+     * application-data directory [recipes/porting-a-windows-app.md 7.1]. */
+    IniResolvePath(argc > 0 ? argv[0] : NULL, szIniPath, sizeof(szIniPath));
+    LoadSettings();
+
     Scintilla_RegisterClasses((void *)hab);
     WinRegisterClass(hab, (PSZ)"Notepad2Client", ClientWndProc, CS_SIZEREDRAW, 0);
 
@@ -954,12 +1094,29 @@ int main(void)
     }
     hwndFrameGlobal = hwndFrame;
     BuildSchemeMenu(hwndFrame);
+
+    /* A file named on the command line replaces the starter text, and picks
+     * the scheme the same way File/Open does. */
+    if (argc > 1 && argv[1] && argv[1][0]) {
+        if (LoadFile(hwndClient, (PSZ)argv[1]))
+            iScheme = Style_MatchFromFile(szFileName);
+    }
+
     Style_Apply(hwndSci, iScheme, szFontFace, iFontSize);
     ApplyView();
     SyncMenu(hwndFrame);
     ShowStatus();
-    WinSetWindowPos(hwndFrame, HWND_TOP, 40, 40, 720, 440,
-                    SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
+
+    /* Restore the saved geometry if there is one. SWP is assigned by field
+     * name throughout - its declaration order (fl, cy, cx, y, x) is the
+     * reverse of WinSetWindowPos's arguments [os2ref/pm-window-messaging.md]. */
+    if (bHaveSavedPos)
+        WinSetWindowPos(hwndFrame, HWND_TOP,
+                        swpSaved.x, swpSaved.y, swpSaved.cx, swpSaved.cy,
+                        SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
+    else
+        WinSetWindowPos(hwndFrame, HWND_TOP, 40, 40, 720, 440,
+                        SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
 
     /* One loop drives both the frame and the modeless Find dialog. PM needs no
      * IsDialogMessage equivalent: the dialog is an ordinary window in this
@@ -967,6 +1124,9 @@ int main(void)
      * when WinDispatchMsg delivers to it. */
     while (WinGetMsg(hab, &qmsg, NULLHANDLE, 0, 0))
         WinDispatchMsg(hab, &qmsg);
+
+    /* Save before the frame is destroyed - WinQueryWindowPos needs it alive. */
+    SaveSettings(hwndFrame);
 
     if (EditFindReplaceHwnd() != NULLHANDLE)
         WinDestroyWindow(EditFindReplaceHwnd());
