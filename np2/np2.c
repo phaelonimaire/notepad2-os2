@@ -94,6 +94,8 @@ static CHAR szRunCmd[300] = "";
 static CHAR szBrowseDir[CCHMAXPATH] = "";
 static CHAR aMru[NP2_MRU_MAX][CCHMAXPATH];
 static int  cMru = 0;
+static CHAR aFav[NP2_MRU_MAX][CCHMAXPATH];
+static int  cFav = 0;
 
 /* An MRU entry must be fully qualified or it only reopens from the directory
  * it was first opened in - "demo.c" from a command line is a real example.
@@ -101,13 +103,9 @@ static int  cMru = 0;
  * resolve one [os2ref/file-io.md]. */
 static void MruAddQualified(const char *pszFile)
 {
-    CHAR szFull[CCHMAXPATH];
-    if (DosQueryPathInfo((PSZ)pszFile, FIL_QUERYFULLNAME,
-                         szFull, sizeof(szFull)) == NO_ERROR && szFull[0])
-        MruAdd(aMru, &cMru, szFull);
-    else
-        MruAdd(aMru, &cMru, pszFile);
+    MruAdd(aMru, &cMru, pszFile);
 }
+
 static int  iEncoding = NP2ENC_ANSI;      /* the document's file encoding */
 static int  iForceEncoding = -1;          /* Reload As: skip detection once */
 
@@ -152,6 +150,20 @@ static const struct { USHORT id; unsigned int msg; } aPassthrough[] = {
 };
 
 static CHAR szFileName[CCHMAXPATH] = "";
+
+/* Store the document's name fully qualified. Everything downstream wants an
+ * absolute path: the MRU has to reopen from any directory, WinQueryObject
+ * (desktop shadow) will not resolve a relative name at all, and the title bar
+ * reads better. A name that arrived from the command line is relative. */
+static void SetFileName(const char *pszFile)
+{
+    CHAR szFull[CCHMAXPATH];
+    if (DosQueryPathInfo((PSZ)pszFile, FIL_QUERYFULLNAME,
+                         szFull, sizeof(szFull)) == NO_ERROR && szFull[0])
+        strcpy(szFileName, szFull);
+    else
+        strcpy(szFileName, pszFile);
+}
 static CHAR szStatus[256] = "";
 static HWND hwndFrameGlobal = NULLHANDLE;
 
@@ -322,7 +334,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     Sci(SCI_SETSAVEPOINT, 0, 0);
     free(pBuf);
 
-    strcpy(szFileName, (char *)pszFile);
+    SetFileName((const char *)pszFile);
     MruAddQualified(szFileName);
 
     /* Pick the scheme from the extension, as Notepad2 does on open. */
@@ -399,7 +411,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile)
     }
 
     Sci(SCI_SETSAVEPOINT, 0, 0);
-    strcpy(szFileName, (char *)pszFile);
+    SetFileName((const char *)pszFile);
     MruAddQualified(szFileName);
     sprintf(szStatus, "Saved %lu bytes to %s", (unsigned long)cbWritten, pszFile);
     return TRUE;
@@ -540,6 +552,19 @@ static void LoadSettings(void)
         }
     }
 
+    cFav = 0;
+    {
+        int i;
+        for (i = 0; i < NP2_MRU_MAX; i++) {
+            CHAR szKey[32], szVal[CCHMAXPATH];
+            sprintf(szKey, "File%d", i);
+            IniGetStr("Favorites", szKey, "", szVal, sizeof(szVal));
+            if (!szVal[0])
+                break;
+            strcpy(aFav[cFav++], szVal);
+        }
+    }
+
     cMru = 0;
     {
         int i;
@@ -626,6 +651,16 @@ static void SaveSettings(HWND hwndFrame)
             sprintf(szVal, "%06lX,%d,%s", (unsigned long)Style_SlotColour(i),
                     Style_SlotBold(i) ? 1 : 0, Style_SlotName(i));
             IniWriteStr(szKey, szVal);
+        }
+    }
+
+    IniWriteSection("Favorites");
+    {
+        int i;
+        for (i = 0; i < cFav; i++) {
+            CHAR szKey[32];
+            sprintf(szKey, "File%d", i);
+            IniWriteStr(szKey, aFav[i]);
         }
     }
 
@@ -1323,6 +1358,74 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- Syntax scheme and font ---------------------------------------- */
+        /* --- Favorites and desktop integration ----------------------------- */
+        case IDM_FAVORITES: {
+            CHAR szPick[CCHMAXPATH];
+            if (EditListPickDlg(hwnd, "Favorites", aFav, &cFav,
+                                szPick, sizeof(szPick))) {
+                if (ConfirmDiscard(hwnd)) {
+                    szStatus[0] = '\0';
+                    LoadFile(hwnd, (PSZ)szPick);
+                    ShowStatus();
+                    SyncMenu(hwndFrame);
+                    WinInvalidateRect(hwndSci, NULL, TRUE);
+                }
+            }
+            break;
+        }
+
+        case IDM_ADDTOFAV:
+            if (!szFileName[0]) {
+                WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Save the document first.",
+                              (PSZ)"Favorites", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+            } else {
+                MruAdd(aFav, &cFav, szFileName);
+                sprintf(szStatus, "added to favorites");
+                ShowStatus();
+            }
+            break;
+
+        /* Win32 "Create Desktop Link" makes a .lnk shortcut. The OS/2 analogue
+         * is a Workplace Shell SHADOW, and WinCreateShadow makes one directly:
+         * resolve the file to an object with WinQueryObject, then shadow it
+         * onto the desktop [os2ref/wps-classes.md 10]. */
+        case IDM_CREATELINK: {
+            HOBJECT hobjFile, hobjDesk;
+            if (!szFileName[0]) {
+                WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Save the document first.",
+                              (PSZ)"Desktop Link", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+                break;
+            }
+            hobjFile = WinQueryObject((PCSZ)szFileName);
+            hobjDesk = WinQueryObject((PCSZ)"<WP_DESKTOP>");
+            if (hobjFile != NULLHANDLE && hobjDesk != NULLHANDLE &&
+                WinCreateShadow(hobjFile, hobjDesk, 0) != NULLHANDLE) {
+                sprintf(szStatus, "desktop shadow created");
+                ShowStatus();
+            } else {
+                WinMessageBox(HWND_DESKTOP, hwnd,
+                              (PSZ)"Could not create a desktop shadow for this file.\n"
+                                   "(WinQueryObject or WinCreateShadow failed.)",
+                              (PSZ)"Desktop Link", 0, MB_OK | MB_ERROR | MB_MOVEABLE);
+            }
+            break;
+        }
+
+        /* Open With: pick a program with the container browser, then run it
+         * with the current file as its argument. */
+        case IDM_OPENWITH: {
+            CHAR szProg[CCHMAXPATH];
+            if (!szFileName[0]) {
+                WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Save the document first.",
+                              (PSZ)"Open With", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+                break;
+            }
+            if (BrowseDlg(hwnd, szBrowseDir, sizeof(szBrowseDir),
+                          szProg, sizeof(szProg)))
+                RunProgram(hwnd, szProg, szFileName, FALSE);
+            break;
+        }
+
         case IDM_PRINT:
             PrintDocument(hwnd, hwndSci,
                           szFileName[0] ? szFileName : "Untitled",

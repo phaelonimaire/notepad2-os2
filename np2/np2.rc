@@ -13,6 +13,11 @@ BEGIN
         MENUITEM "Recent F~iles...", IDM_RECENT
         MENUITEM "Bro~wse...",       IDM_BROWSE
         MENUITEM SEPARATOR
+        MENUITEM "~Favorites...",       IDM_FAVORITES
+        MENUITEM "Add ~to Favorites",   IDM_ADDTOFAV
+        MENUITEM "Create Des~ktop Link", IDM_CREATELINK
+        MENUITEM "Open Wit~h...",       IDM_OPENWITH
+        MENUITEM SEPARATOR
         MENUITEM "~Print...",        IDM_PRINT
         MENUITEM "Page Set~up...",   IDM_PAGESETUP
         MENUITEM SEPARATOR

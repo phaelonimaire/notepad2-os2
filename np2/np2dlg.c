@@ -880,6 +880,7 @@ typedef struct _mruarg {
     int  *pcMru;
     char *pszPick;
     int   cchPick;
+    const char *pszTitle;
 } MRUARG;
 
 static void MruFill(HWND hwnd, MRUARG *pma)
@@ -901,6 +902,8 @@ static MRESULT EXPENTRY RecentDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM m
     switch (msg) {
     case WM_INITDLG:
         pma = (MRUARG *)PVOIDFROMMP(mp2);
+        if (pma->pszTitle)
+            WinSetWindowText(hwnd, (PSZ)pma->pszTitle);
         MruFill(hwnd, pma);
         PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
         return (MRESULT)FALSE;
@@ -942,13 +945,21 @@ static MRESULT EXPENTRY RecentDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM m
     return WinDefDlgProc(hwnd, msg, mp1, mp2);
 }
 
-BOOL EditRecentDlg(HWND hwndOwner, char aMru[NP2_MRU_MAX][CCHMAXPATH],
-                   int *pcMru, char *pszPick, int cchPick)
+BOOL EditListPickDlg(HWND hwndOwner, const char *pszTitle,
+                     char aList[NP2_MRU_MAX][CCHMAXPATH],
+                     int *pcList, char *pszPick, int cchPick)
 {
     MRUARG ma;
-    ma.aMru = aMru; ma.pcMru = pcMru;
+    ma.aMru = aList; ma.pcMru = pcList;
     ma.pszPick = pszPick; ma.cchPick = cchPick;
+    ma.pszTitle = pszTitle;
     pszPick[0] = '\0';
     return (BOOL)(WinDlgBox(HWND_DESKTOP, hwndOwner, RecentDlgProc, NULLHANDLE,
                             IDD_RECENT, &ma) == DID_OK && pszPick[0] != '\0');
+}
+
+BOOL EditRecentDlg(HWND hwndOwner, char aMru[NP2_MRU_MAX][CCHMAXPATH],
+                   int *pcMru, char *pszPick, int cchPick)
+{
+    return EditListPickDlg(hwndOwner, "Recent Files", aMru, pcMru, pszPick, cchPick);
 }

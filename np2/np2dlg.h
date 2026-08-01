@@ -65,6 +65,12 @@ BOOL EditSchemeConfigDlg(HWND hwndOwner);
 /* Recent files. The caller owns the list; the dialog edits it in place and
  * writes the chosen path into pszPick. */
 #define NP2_MRU_MAX 16
+/* Generic "pick one of these paths" dialog, used for both Recent Files and
+ * Favorites - the two differ only in their title and which list they edit. */
+BOOL EditListPickDlg(HWND hwndOwner, const char *pszTitle,
+                     char aList[NP2_MRU_MAX][CCHMAXPATH],
+                     int *pcList, char *pszPick, int cchPick);
+
 BOOL EditRecentDlg(HWND hwndOwner, char aMru[NP2_MRU_MAX][CCHMAXPATH],
                    int *pcMru, char *pszPick, int cchPick);
 void MruAdd(char aMru[NP2_MRU_MAX][CCHMAXPATH], int *pcMru, const char *pszFile);

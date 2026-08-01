@@ -308,3 +308,9 @@
 /* Printing */
 #define IDM_PRINT           414
 #define IDM_PAGESETUP       415
+
+/* Favorites / desktop link / open with */
+#define IDM_FAVORITES       416
+#define IDM_ADDTOFAV        417
+#define IDM_CREATELINK      418
+#define IDM_OPENWITH        419
