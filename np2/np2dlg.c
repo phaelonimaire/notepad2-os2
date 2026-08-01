@@ -505,9 +505,10 @@ BOOL EditEncloseSelectionDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int 
     return RunTwoStr(hwndOwner, IDD_ENCLOSESEL, pszOpen, pszClose, cch, FALSE);
 }
 
-BOOL EditInsertTagDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int cch)
+BOOL EditInsertTagDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int cch,
+                      BOOL bAutoClose)
 {
-    return RunTwoStr(hwndOwner, IDD_INSERTTAG, pszOpen, pszClose, cch, TRUE);
+    return RunTwoStr(hwndOwner, IDD_INSERTTAG, pszOpen, pszClose, cch, bAutoClose);
 }
 
 /*--------------------------------------------------------------------------

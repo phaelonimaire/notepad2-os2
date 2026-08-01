@@ -314,3 +314,17 @@
 #define IDM_ADDTOFAV        417
 #define IDM_CREATELINK      418
 #define IDM_OPENWITH        419
+
+/* Window title format + Esc key + misc preferences */
+#define IDM_TITLE_MENU      420
+#define IDM_TITLE_NAMEONLY  421
+#define IDM_TITLE_NAMEDIR   422
+#define IDM_TITLE_FULLPATH  423
+#define IDM_ESC_MENU        424
+#define IDM_ESC_NONE        425
+#define IDM_ESC_MINIMIZE    426
+#define IDM_ESC_EXIT        427
+#define IDM_ALWAYSONTOP     428
+#define IDM_AUTOCLOSETAGS   429
+#define IDM_SAVESETTINGSNOW 430
+#define IDM_OPENINIFILE     431

@@ -97,6 +97,13 @@ static int  cMru = 0;
 static CHAR aFav[NP2_MRU_MAX][CCHMAXPATH];
 static int  cFav = 0;
 
+/* Window-title format: 0 name only, 1 name + directory, 2 full path. */
+static int  iTitleFormat = 2;
+/* Esc key: 0 nothing, 1 minimise, 2 exit. */
+static int  iEscFunction = 0;
+static BOOL bAlwaysOnTop  = FALSE;
+static BOOL bAutoCloseTags = TRUE;
+
 /* An MRU entry must be fully qualified or it only reopens from the directory
  * it was first opened in - "demo.c" from a command line is a real example.
  * DosQueryPathInfo with FIL_QUERYFULLNAME is the documented OS/2 way to
@@ -176,8 +183,31 @@ static EDITFINDREPLACE efrData;
 static void ShowStatus(void)
 {
     CHAR szTitle[400];
+    CHAR szShown[CCHMAXPATH];
+
+    /* Notepad2's "Window Title Display" setting. */
+    if (!szFileName[0]) {
+        strcpy(szShown, "(untitled)");
+    } else if (iTitleFormat == 0) {
+        const char *p = strrchr(szFileName, '\\');
+        strcpy(szShown, p ? p + 1 : szFileName);
+    } else if (iTitleFormat == 1) {
+        const char *pName = strrchr(szFileName, '\\');
+        CHAR szDir[CCHMAXPATH];
+        if (pName) {
+            int n = (int)(pName - szFileName);
+            memcpy(szDir, szFileName, n);
+            szDir[n] = '\0';
+            sprintf(szShown, "%s [%s]", pName + 1, szDir);
+        } else {
+            strcpy(szShown, szFileName);
+        }
+    } else {
+        strcpy(szShown, szFileName);
+    }
+
     sprintf(szTitle, "%s%s%s - Notepad2 for OS/2",
-            szFileName[0] ? szFileName : "(untitled)",
+            szShown,
             szStatus[0] ? "  |  " : "",
             szStatus);
     if (hwndFrameGlobal != NULLHANDLE)
@@ -532,6 +562,10 @@ static void LoadSettings(void)
     bSuppressEOLChanged = IniGetInt(SEC_VIEW, "SuppressEOLMessage", bSuppressEOLChanged);
     iEncoding           = IniGetInt(SEC_VIEW, "DefaultEncoding", iEncoding);
     bStatusbar          = IniGetInt(SEC_VIEW, "Statusbar", bStatusbar);
+    iTitleFormat        = IniGetInt(SEC_VIEW, "TitleFormat", iTitleFormat);
+    iEscFunction        = IniGetInt(SEC_VIEW, "EscFunction", iEscFunction);
+    bAlwaysOnTop        = IniGetInt(SEC_VIEW, "AlwaysOnTop", bAlwaysOnTop);
+    bAutoCloseTags      = IniGetInt(SEC_VIEW, "AutoCloseTags", bAutoCloseTags);
 
     swpSaved.x  = IniGetInt(SEC_WIN, "X",  -1);
     swpSaved.y  = IniGetInt(SEC_WIN, "Y",  -1);
@@ -627,6 +661,10 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("SuppressEOLMessage",        bSuppressEOLChanged);
     IniWriteInt("DefaultEncoding",           iEncoding);
     IniWriteInt("Statusbar",                 bStatusbar);
+    IniWriteInt("TitleFormat",               iTitleFormat);
+    IniWriteInt("EscFunction",               iEscFunction);
+    IniWriteInt("AlwaysOnTop",               bAlwaysOnTop);
+    IniWriteInt("AutoCloseTags",             bAutoCloseTags);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
@@ -816,6 +854,8 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_AUTOINDENT,     &bAutoIndent     },
             { IDM_READONLY,       &bReadOnly       },
             { IDM_STATUSBAR,      &bStatusbar      },
+            { IDM_ALWAYSONTOP,    &bAlwaysOnTop    },
+            { IDM_AUTOCLOSETAGS,  &bAutoCloseTags  },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
             { 0, NULL }
         };
@@ -852,6 +892,15 @@ static void SyncMenu(HWND hwndFrame)
             WinSendMsg(hwndMenu, MM_SETITEMATTR,
                        MPFROM2SHORT(IDM_SCHEME_BASE + i, TRUE),
                        MPFROM2SHORT(MIA_CHECKED, (iScheme == i) ? MIA_CHECKED : 0));
+
+        for (i = 0; i < 3; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                       MPFROM2SHORT(IDM_TITLE_NAMEONLY + i, TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, (iTitleFormat == i) ? MIA_CHECKED : 0));
+        for (i = 0; i < 3; i++)
+            WinSendMsg(hwndMenu, MM_SETITEMATTR,
+                       MPFROM2SHORT(IDM_ESC_NONE + i, TRUE),
+                       MPFROM2SHORT(MIA_CHECKED, (iEscFunction == i) ? MIA_CHECKED : 0));
 
         for (i = 0; i < NP2ENC_COUNT; i++)
             WinSendMsg(hwndMenu, MM_SETITEMATTR,
@@ -974,6 +1023,23 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
      * [scintilla/os2/ScintillaPM.cxx NotifyParent]. SCN_UPDATEUI fires on every
      * caret or selection change, which is exactly when the occurrence marks
      * need recomputing. */
+    /* Esc reaches the client because the editor passes keys it does not use
+     * to WinDefWindowProc, which forwards them to the owner - the contract in
+     * os2ref/pm-window-messaging.md that also makes the menu mnemonics work. */
+    case WM_CHAR:
+        if (iEscFunction != 0 &&
+            (SHORT1FROMMP(mp1) & KC_VIRTUALKEY) &&
+            !(SHORT1FROMMP(mp1) & KC_KEYUP) &&
+            SHORT2FROMMP(mp2) == VK_ESC) {
+            if (iEscFunction == 1)
+                WinSetWindowPos(WinQueryWindow(hwnd, QW_PARENT), HWND_BOTTOM,
+                                0, 0, 0, 0, SWP_MINIMIZE | SWP_ZORDER);
+            else
+                WinPostMsg(hwnd, WM_COMMAND, MPFROMSHORT(IDM_EXIT), 0);
+            return (MRESULT)TRUE;
+        }
+        break;
+
     case WM_CONTROL:
         /* ScintillaPM multiplexes TWO different notifications through
          * WM_CONTROL, and mp2 means something different in each:
@@ -1149,7 +1215,8 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         case IDM_INSERTTAG:
-            if (EditInsertTagDlg(hwnd, szTagOpen, szTagClose, sizeof(szTagOpen)))
+            if (EditInsertTagDlg(hwnd, szTagOpen, szTagClose, sizeof(szTagOpen),
+                                 bAutoCloseTags))
                 EditEncloseSelection(hwndSci, szTagOpen, szTagClose);
             break;
 
@@ -1359,6 +1426,52 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
         /* --- Syntax scheme and font ---------------------------------------- */
         /* --- Favorites and desktop integration ----------------------------- */
+        /* --- Preferences --------------------------------------------------- */
+        case IDM_TITLE_NAMEONLY:
+        case IDM_TITLE_NAMEDIR:
+        case IDM_TITLE_FULLPATH:
+            iTitleFormat = idCmd - IDM_TITLE_NAMEONLY;
+            ShowStatus();
+            SyncMenu(hwndFrame);
+            break;
+
+        case IDM_ESC_NONE:
+        case IDM_ESC_MINIMIZE:
+        case IDM_ESC_EXIT:
+            iEscFunction = idCmd - IDM_ESC_NONE;
+            SyncMenu(hwndFrame);
+            break;
+
+        case IDM_ALWAYSONTOP:
+            bAlwaysOnTop = !bAlwaysOnTop;
+            /* PM has no WS_EX_TOPMOST; the equivalent is to place the frame
+             * behind HWND_TOP and keep it there with SWP_ZORDER. */
+            WinSetWindowPos(hwndFrame, bAlwaysOnTop ? HWND_TOP : HWND_BOTTOM,
+                            0, 0, 0, 0, SWP_ZORDER);
+            SyncMenu(hwndFrame);
+            break;
+
+        case IDM_AUTOCLOSETAGS:
+            bAutoCloseTags = !bAutoCloseTags;
+            SyncMenu(hwndFrame);
+            break;
+
+        case IDM_SAVESETTINGSNOW:
+            SaveSettings(hwndFrame);
+            sprintf(szStatus, "settings saved to %s", szIniPath);
+            ShowStatus();
+            break;
+
+        case IDM_OPENINIFILE:
+            if (szIniPath[0] && ConfirmDiscard(hwnd)) {
+                szStatus[0] = '\0';
+                LoadFile(hwnd, (PSZ)szIniPath);
+                ShowStatus();
+                SyncMenu(hwndFrame);
+                WinInvalidateRect(hwndSci, NULL, TRUE);
+            }
+            break;
+
         case IDM_FAVORITES: {
             CHAR szPick[CCHMAXPATH];
             if (EditListPickDlg(hwnd, "Favorites", aFav, &cFav,

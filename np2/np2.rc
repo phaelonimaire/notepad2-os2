@@ -216,6 +216,25 @@ BEGIN
         MENUITEM "~Tab Settings...",       IDM_TABSETTINGS
         MENUITEM "~Long Line Settings...", IDM_LONGLINESET
         MENUITEM "~Word Wrap Settings...", IDM_WORDWRAPSET
+        MENUITEM SEPARATOR
+        SUBMENU "Window Title ~Display", IDM_TITLE_MENU
+        BEGIN
+            MENUITEM "Filename ~Only",        IDM_TITLE_NAMEONLY
+            MENUITEM "Filename and ~Directory", IDM_TITLE_NAMEDIR
+            MENUITEM "Full ~Pathname",        IDM_TITLE_FULLPATH
+        END
+        SUBMENU "~Esc Key Function", IDM_ESC_MENU
+        BEGIN
+            MENUITEM "~None",     IDM_ESC_NONE
+            MENUITEM "~Minimize", IDM_ESC_MINIMIZE
+            MENUITEM "E~xit",     IDM_ESC_EXIT
+        END
+        MENUITEM SEPARATOR
+        MENUITEM "Auto Close HTML/XML Ta~gs", IDM_AUTOCLOSETAGS
+        MENUITEM "Always On To~p",            IDM_ALWAYSONTOP
+        MENUITEM SEPARATOR
+        MENUITEM "Sa~ve Settings Now",        IDM_SAVESETTINGSNOW
+        MENUITEM "Open np2.i~ni",             IDM_OPENINIFILE
     END
     SUBMENU "~Help", IDM_HELP
     BEGIN

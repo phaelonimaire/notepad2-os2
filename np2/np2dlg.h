@@ -47,7 +47,8 @@ BOOL EditWordWrapDlg(HWND hwndOwner, NP2SETTINGS *s);
 
 BOOL EditModifyLinesDlg(HWND hwndOwner, char *pszPrefix, char *pszAppend, int cch);
 BOOL EditEncloseSelectionDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int cch);
-BOOL EditInsertTagDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int cch);
+BOOL EditInsertTagDlg(HWND hwndOwner, char *pszOpen, char *pszClose, int cch,
+                      BOOL bAutoClose);
 BOOL EditAlignDlg(HWND hwndOwner, int *piAlignMode);
 BOOL EditSortDlg(HWND hwndOwner, HWND hwndEdit, int *piSortFlags);
 void EditAboutDlg(HWND hwndOwner);
