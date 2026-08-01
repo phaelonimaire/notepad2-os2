@@ -283,3 +283,11 @@
 #define IDC_STATUS_SEL      801
 #define IDC_STATUS_ENC      802
 #define IDC_STATUS_MODE     803
+
+/* Scheme editor */
+#define IDM_SCHEMECONFIG    411
+#define IDD_STYLECONFIG     550
+#define IDC_SLOTLIST        810
+#define IDC_SLOTCOLOUR      811
+#define IDC_SLOTBOLD        812
+#define IDC_SLOTPREVIEW     813

@@ -58,4 +58,8 @@ void EditAboutDlg(HWND hwndOwner);
 void NP2InfoBox(HWND hwndOwner, const char *pszText, const char *pszCaption,
                 BOOL *pbSuppress);
 
+/* The scheme editor: edit the shared semantic palette. Returns TRUE if the
+ * user accepted changes, so the caller can re-apply and persist. */
+BOOL EditSchemeConfigDlg(HWND hwndOwner);
+
 #endif /* NP2DLG_H */

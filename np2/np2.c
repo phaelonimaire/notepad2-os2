@@ -505,6 +505,19 @@ static void LoadSettings(void)
     swpSaved.cy = IniGetInt(SEC_WIN, "CY", -1);
     bHaveSavedPos = (BOOL)(swpSaved.cx > 0 && swpSaved.cy > 0);
 
+    {
+        int i;
+        for (i = 0; i < Style_SlotCount(); i++) {
+            CHAR szKey[64], szVal[80];
+            unsigned long clr = 0;
+            int bold = 0;
+            sprintf(szKey, "Slot%d", i);
+            IniGetStr("Colours", szKey, "", szVal, sizeof(szVal));
+            if (szVal[0] && sscanf(szVal, "%lX,%d", &clr, &bold) == 2)
+                Style_SetSlot(i, (LONG)clr, (BOOL)bold);
+        }
+    }
+
     IniGetStr(SEC_FIND, "Find", "", efrData.szFind, sizeof(efrData.szFind));
     IniGetStr(SEC_FIND, "Replace", "", efrData.szReplace, sizeof(efrData.szReplace));
     efrData.fuFlags      = IniGetInt(SEC_FIND, "Flags", 0);
@@ -564,6 +577,20 @@ static void SaveSettings(HWND hwndFrame)
         IniWriteInt("Y",  swp.y);
         IniWriteInt("CX", swp.cx);
         IniWriteInt("CY", swp.cy);
+    }
+
+    /* The palette: one line per semantic slot. Written as name=colour,bold so
+     * a hand edit is possible without a decoder ring. */
+    IniWriteSection("Colours");
+    {
+        int i;
+        for (i = 0; i < Style_SlotCount(); i++) {
+            CHAR szKey[64], szVal[64];
+            sprintf(szKey, "Slot%d", i);
+            sprintf(szVal, "%06lX,%d,%s", (unsigned long)Style_SlotColour(i),
+                    Style_SlotBold(i) ? 1 : 0, Style_SlotName(i));
+            IniWriteStr(szKey, szVal);
+        }
     }
 
     IniWriteSection(SEC_FIND);
@@ -1250,6 +1277,11 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- Syntax scheme and font ---------------------------------------- */
+        case IDM_SCHEMECONFIG:
+            if (EditSchemeConfigDlg(hwnd))
+                ApplyScheme(hwndFrame);      /* re-apply so it is visible now */
+            break;
+
         case IDM_VIEW_FONT:
             if (Style_ChooseFont(hwnd, szFontFace, sizeof(szFontFace), &iFontSize))
                 ApplyScheme(hwndFrame);

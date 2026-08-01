@@ -169,6 +169,7 @@ BEGIN
             MENUITEM "(none)", IDM_SCHEME_BASE
         END
         MENUITEM "Default ~Font...",       IDM_VIEW_FONT
+        MENUITEM "Customi~ze Colours...",  IDM_SCHEMECONFIG
         MENUITEM SEPARATOR
         MENUITEM "~Word Wrap",             IDM_WORDWRAP
         MENUITEM "~Long Line Marker",      IDM_LONGLINEMARKER
@@ -377,6 +378,32 @@ BEGIN
 
         DEFPUSHBUTTON "OK",     DID_OK,     220, 148, 56, 14
         PUSHBUTTON    "Cancel", DID_CANCEL, 220, 130, 56, 14
+    END
+END
+
+DLGTEMPLATE IDD_STYLECONFIG
+BEGIN
+    DIALOG "Customize Colours", IDD_STYLECONFIG, 20, 20, 330, 190, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Element:", -1, 8, 172, 80, 8
+        /* A plain list box, not a container: one column of names is exactly
+           what WC_LISTBOX is for. */
+        CONTROL "", IDC_SLOTLIST, 8, 60, 150, 108, WC_LISTBOX,
+                LS_NOADJUSTPOS | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        LTEXT   "Colour:", -1, 170, 172, 80, 8
+        /* OS/2 has no standard colour-picker dialog, so the colours are a
+           fixed named list [os2ref/resources-and-dialogs.md 10]. */
+        CONTROL "", IDC_SLOTCOLOUR, 170, 96, 150, 76, WC_COMBOBOX,
+                CBS_DROPDOWNLIST | WS_VISIBLE | WS_TABSTOP
+
+        AUTOCHECKBOX "~Bold", IDC_SLOTBOLD, 170, 82, 100, 10
+
+        LTEXT   "Preview:", -1, 170, 66, 80, 8
+        CTEXT   "AaBbCc 123", IDC_SLOTPREVIEW, 170, 46, 150, 14
+
+        DEFPUSHBUTTON "OK",     DID_OK,      206, 14, 54, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL,  266, 14, 54, 14
     END
 END
 

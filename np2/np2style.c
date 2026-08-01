@@ -63,7 +63,8 @@ enum {
     SEM_COUNT
 };
 
-static const struct { LONG clr; BOOL bBold; } aSem[SEM_COUNT] = {
+/* Mutable: the scheme editor writes here and np2.c persists it. */
+static struct { LONG clr; BOOL bBold; } aSem[SEM_COUNT] = {
     { NP2C_BLACK,  FALSE },   /* DEFAULT   */
     { NP2C_GREEN,  FALSE },   /* COMMENT   */
     { NP2C_BLUE,   TRUE  },   /* KEYWORD   */
@@ -352,6 +353,55 @@ static const NP2SCHEME aSchemes[] = {
 };
 
 #define NSCHEMES ((int)(sizeof(aSchemes) / sizeof(aSchemes[0])))
+
+/*--------------------------------------------------------------------------
+ * The editable palette
+ *------------------------------------------------------------------------*/
+
+static const char *aSemNames[SEM_COUNT] = {
+    "Default text", "Comment", "Keyword", "Keyword (secondary)", "String",
+    "Number", "Preprocessor", "Operator", "Tag", "Attribute", "Heading"
+};
+
+/* Offered in place of a colour picker: OS/2 ships no standard colour dialog -
+ * WinFileDlg and WinFontDlg are the only two common dialogs - so a fixed
+ * palette of named colours is the honest substitute for one. Values are
+ * Scintilla's 0xBBGGRR. */
+static const struct { const char *pszName; LONG clr; } aNamedColours[] = {
+    { "Black",   0x000000L }, { "Maroon",  0x000080L }, { "Green",   0x008000L },
+    { "Olive",   0x008080L }, { "Navy",    0x800000L }, { "Purple",  0x800080L },
+    { "Teal",    0x808000L }, { "Gray",    0x808080L }, { "Silver",  0xC0C0C0L },
+    { "Red",     0x0000FFL }, { "Lime",    0x00FF00L }, { "Yellow",  0x00FFFFL },
+    { "Blue",    0xFF0000L }, { "Fuchsia", 0xFF00FFL }, { "Aqua",    0xFFFF00L },
+    { "White",   0xFFFFFFL }
+};
+#define NCOLOURS ((int)(sizeof(aNamedColours) / sizeof(aNamedColours[0])))
+
+int         Style_SlotCount(void)          { return SEM_COUNT; }
+const char *Style_SlotName(int i)          { return (i >= 0 && i < SEM_COUNT) ? aSemNames[i] : ""; }
+LONG        Style_SlotColour(int i)        { return (i >= 0 && i < SEM_COUNT) ? aSem[i].clr : 0; }
+BOOL        Style_SlotBold(int i)          { return (i >= 0 && i < SEM_COUNT) ? aSem[i].bBold : FALSE; }
+
+void Style_SetSlot(int i, LONG clr, BOOL bBold)
+{
+    if (i >= 0 && i < SEM_COUNT) {
+        aSem[i].clr = clr;
+        aSem[i].bBold = bBold;
+    }
+}
+
+int         Style_ColourCount(void)        { return NCOLOURS; }
+const char *Style_ColourName(int i)        { return (i >= 0 && i < NCOLOURS) ? aNamedColours[i].pszName : ""; }
+LONG        Style_ColourValue(int i)       { return (i >= 0 && i < NCOLOURS) ? aNamedColours[i].clr : 0; }
+
+int Style_ColourIndexOf(LONG clr)
+{
+    int i;
+    for (i = 0; i < NCOLOURS; i++)
+        if (aNamedColours[i].clr == clr)
+            return i;
+    return 0;
+}
 
 int Style_Count(void) { return NSCHEMES; }
 

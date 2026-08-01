@@ -33,6 +33,7 @@
 #include "np2.h"
 #include "np2dlg.h"
 #include "np2edit.h"
+#include "np2style.h"
 #include "pmhelpers.h"
 
 static LONG SciMsg(HWND h, unsigned int msg, LONG wp, const void *lp)
@@ -722,4 +723,119 @@ void NP2InfoBox(HWND hwndOwner, const char *pszText, const char *pszCaption,
         *pbSuppress = ia.bSuppress;
 
     (void)pszCaption;   /* the template carries the caption */
+}
+
+/*--------------------------------------------------------------------------
+ * Customize Colours - the scheme editor
+ *
+ * Notepad2 edits each lexer style individually. This port maps every lexer's
+ * styles onto a small shared semantic palette (np2style.c), so the editor
+ * edits the palette: changing "Comment" changes comments in every language at
+ * once. That is the honest editor for this design rather than a pretence of
+ * per-language editing that the model does not have.
+ *
+ * The colours are a fixed named list because OS/2 has no standard colour
+ * dialog at all - WinFileDlg and WinFontDlg are the only two common dialogs
+ * [os2ref/resources-and-dialogs.md 10]. A picker would have to be written
+ * from scratch; a named palette is the smaller honest thing.
+ *------------------------------------------------------------------------*/
+
+/* Working copy, so Cancel really cancels. */
+static LONG aEditClr[32];
+static BOOL aEditBold[32];
+
+static void SchemeShowSlot(HWND hwnd, int iSlot)
+{
+    if (iSlot < 0 || iSlot >= Style_SlotCount())
+        return;
+    WinSendDlgItemMsg(hwnd, IDC_SLOTCOLOUR, LM_SELECTITEM,
+                      MPFROMSHORT((SHORT)Style_ColourIndexOf(aEditClr[iSlot])),
+                      MPFROMSHORT(TRUE));
+    WinCheckButton(hwnd, IDC_SLOTBOLD, aEditBold[iSlot] ? 1UL : 0UL);
+    {
+        CHAR sz[96];
+        sprintf(sz, "%s%s - %s", Style_SlotName(iSlot),
+                aEditBold[iSlot] ? " (bold)" : "",
+                Style_ColourName(Style_ColourIndexOf(aEditClr[iSlot])));
+        WinSetDlgItemText(hwnd, IDC_SLOTPREVIEW, (PSZ)sz);
+    }
+}
+
+static int SchemeCurSlot(HWND hwnd)
+{
+    SHORT s = (SHORT)LONGFROMMR(WinSendDlgItemMsg(hwnd, IDC_SLOTLIST,
+                        LM_QUERYSELECTION, MPFROMSHORT(LIT_FIRST), 0));
+    return (s == LIT_NONE) ? 0 : s;
+}
+
+static MRESULT EXPENTRY SchemeConfigDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    switch (msg) {
+    case WM_INITDLG: {
+        int i;
+        for (i = 0; i < Style_SlotCount(); i++) {
+            aEditClr[i]  = Style_SlotColour(i);
+            aEditBold[i] = Style_SlotBold(i);
+            WinSendDlgItemMsg(hwnd, IDC_SLOTLIST, LM_INSERTITEM,
+                              MPFROMSHORT(LIT_END), MPFROMP((PVOID)Style_SlotName(i)));
+        }
+        for (i = 0; i < Style_ColourCount(); i++)
+            WinSendDlgItemMsg(hwnd, IDC_SLOTCOLOUR, LM_INSERTITEM,
+                              MPFROMSHORT(LIT_END), MPFROMP((PVOID)Style_ColourName(i)));
+        WinSendDlgItemMsg(hwnd, IDC_SLOTLIST, LM_SELECTITEM,
+                          MPFROMSHORT(0), MPFROMSHORT(TRUE));
+        SchemeShowSlot(hwnd, 0);
+        PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
+        return (MRESULT)FALSE;
+    }
+
+    /* List and combo selections arrive as WM_CONTROL, not WM_COMMAND, and the
+     * notify code decides what happened [recipes/porting-a-windows-app.md]. */
+    case WM_CONTROL: {
+        const USHORT id   = SHORT1FROMMP(mp1);
+        const USHORT code = SHORT2FROMMP(mp1);
+        if (id == IDC_SLOTLIST && code == LN_SELECT) {
+            SchemeShowSlot(hwnd, SchemeCurSlot(hwnd));
+        } else if (id == IDC_SLOTCOLOUR && code == CBN_LBSELECT) {
+            const int iSlot = SchemeCurSlot(hwnd);
+            SHORT sel = (SHORT)LONGFROMMR(WinSendDlgItemMsg(hwnd, IDC_SLOTCOLOUR,
+                            LM_QUERYSELECTION, MPFROMSHORT(LIT_FIRST), 0));
+            if (sel != LIT_NONE && iSlot >= 0) {
+                aEditClr[iSlot] = Style_ColourValue(sel);
+                SchemeShowSlot(hwnd, iSlot);
+            }
+        }
+        return (MRESULT)0;
+    }
+
+    case WM_COMMAND:
+        switch (SHORT1FROMMP(mp1)) {
+        case IDC_SLOTBOLD: {
+            const int iSlot = SchemeCurSlot(hwnd);
+            if (iSlot >= 0) {
+                aEditBold[iSlot] = Checked(hwnd, IDC_SLOTBOLD);
+                SchemeShowSlot(hwnd, iSlot);
+            }
+            return (MRESULT)0;
+        }
+        case DID_OK: {
+            int i;
+            for (i = 0; i < Style_SlotCount(); i++)
+                Style_SetSlot(i, aEditClr[i], aEditBold[i]);
+            WinDismissDlg(hwnd, DID_OK);
+            return (MRESULT)0;
+        }
+        case DID_CANCEL:
+            WinDismissDlg(hwnd, DID_CANCEL);
+            return (MRESULT)0;
+        }
+        return (MRESULT)0;
+    }
+    return WinDefDlgProc(hwnd, msg, mp1, mp2);
+}
+
+BOOL EditSchemeConfigDlg(HWND hwndOwner)
+{
+    return (BOOL)(WinDlgBox(HWND_DESKTOP, hwndOwner, SchemeConfigDlgProc,
+                            NULLHANDLE, IDD_STYLECONFIG, NULL) == DID_OK);
 }

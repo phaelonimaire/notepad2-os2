@@ -31,4 +31,23 @@ BOOL Style_SupportsFolding(int iScheme);
 /* WinFontDlg -> the editor's default font. Returns TRUE if the user chose one. */
 BOOL Style_ChooseFont(HWND hwndOwner, char *pszFace, int cchFace, int *piSize);
 
+/* ---- the editable palette -------------------------------------------------
+ * Schemes map each lexer's style numbers onto a small set of shared semantic
+ * slots (comment, keyword, string, ...). Editing a slot therefore changes
+ * every language at once, which is the whole point of the shared palette -
+ * and is where this port's scheme model differs from Notepad2's per-style
+ * editing. See np2style.c. */
+int         Style_SlotCount(void);
+const char *Style_SlotName(int iSlot);
+LONG        Style_SlotColour(int iSlot);
+BOOL        Style_SlotBold(int iSlot);
+void        Style_SetSlot(int iSlot, LONG clr, BOOL bBold);
+
+/* The named colours offered in place of a colour picker - OS/2 has no
+ * standard colour-selection dialog [os2ref/resources-and-dialogs.md 10]. */
+int         Style_ColourCount(void);
+const char *Style_ColourName(int i);
+LONG        Style_ColourValue(int i);
+int         Style_ColourIndexOf(LONG clr);
+
 #endif /* NP2STYLE_H */
