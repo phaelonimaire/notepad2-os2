@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 155 (~63%) |
+| Menu commands | 245 | 158 (~64%) |
 | Dialogs | 27 | 13 |
 | App-layer code | 26,796 lines | 5,560 lines |
 
@@ -33,7 +33,8 @@ look impossible. Sized honestly:
 | **Toolbar** | No PM control class — owner-drawn buttons on a composed bar. Lower value than the statusbar was | **Medium** |
 | ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
-| **Scheme editor** | Settings persistence first; the schemes themselves are done | **Medium** |
+| ~~Scheme editor~~ | **Done** — Customize Colours, commit `11fc683` | |
+| ~~Recent Files~~ | **Done** — `WC_LISTBOX` MRU, commit `04f3171`. Per-file icons still want the container | |
 | **`Dlapi.c`** (1,586 lines) → Favorites, Open With, File MRU | A `WC_CONTAINER` file browser. Routes all identified (step 6) but nothing here has exercised the control yet | **Large** |
 | **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
 
@@ -134,12 +135,13 @@ wrc np2.res np2.exe
 
 ### Suggested order from here
 
-1. **Scheme editor** — unblocked now that settings persistence and schemes both exist.
-2. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control; unblocks Favorites,
-   Open With and File MRU (4 dialogs).
-3. **Print / Page Setup** — fully documented in `os2ref/printing-spooler.md`, just unwritten.
-4. **Toolbar** — owner-drawn; lower value than the statusbar was.
-5. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
+1. **`Dlapi.c` on `WC_CONTAINER`** — the one genuinely uncharted control; unblocks Favorites,
+   Open With, and per-file icons in Recent Files.
+2. **Print / Page Setup** — fully documented in `os2ref/printing-spooler.md`, just unwritten.
+3. **Toolbar** — owner-drawn; lower value than the statusbar was.
+4. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
+5. **Remaining preference commands** — window-title format, Esc key behaviour and similar
+   single-setting toggles. Mechanical once someone wants them.
 
 ### Command-surface notes
 
@@ -210,6 +212,13 @@ A program started over SSH is a **detached** process on OS/2 — no keyboard, mo
 Launch menu is untestable that way and will look broken. Drive a real `CMD.EXE` on the guest
 (`Alt+Esc` to it, then `keyboardputscancode`) for anything that starts another program, integrates
 with the Workplace Shell, or cares about session type. See the toolkit's `recipes/setup-test-vm.md`.
+
+### Platform-layer note
+
+`ScintillaPM::Paint` must honour `paintState == paintAbandoned` and repaint — Scintilla uses it to
+say "the rectangle you gave me was not enough". Ignoring it left the first line of a newly loaded
+document correct with the rest of the screen showing the *previous* file, which reads as a load bug.
+Fixed in `04f3171`; see the toolkit's `recipes/porting-a-windows-app.md` §5.0.
 
 ### Encoding notes
 
