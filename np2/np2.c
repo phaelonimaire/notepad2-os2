@@ -91,6 +91,13 @@ static CHAR szExePath[CCHMAXPATH] = "";   /* for Launch > New Window */
 static CHAR szRunCmd[300] = "";
 static int  iEncoding = NP2ENC_ANSI;      /* the document's file encoding */
 static int  iForceEncoding = -1;          /* Reload As: skip detection once */
+
+/* Statusbar. PM has no statusbar control class - the WC_* set has 24 classes
+ * and none of them is one - so it is composed from WC_STATIC panels
+ * [os2ref/pm-controls.md 6]. */
+static BOOL bStatusbar = TRUE;
+static HWND hwndStatus[4] = { NULLHANDLE, NULLHANDLE, NULLHANDLE, NULLHANDLE };
+static LONG cyStatus = 20;
 static SWP  swpSaved;                 /* window position, restored at start */
 static BOOL bHaveSavedPos = FALSE;
 
@@ -155,6 +162,45 @@ static MRESULT Sci(unsigned int msg, MPARAM mp1, MPARAM mp2)
 {
     return WinSendMsg(hwndSci, msg, mp1, mp2);
 }
+
+/* Refresh the statusbar from the editor's current state. Driven by
+ * SCN_UPDATEUI, so it follows the caret without a timer. */
+static void UpdateStatusbar(void)
+{
+    CHAR sz[128];
+    LONG pos, line, col, selStart, selEnd, eol;
+
+    if (!bStatusbar || hwndStatus[0] == NULLHANDLE || hwndSci == NULLHANDLE)
+        return;
+
+    pos  = LONGFROMMR(Sci(SCI_GETCURRENTPOS, 0, 0));
+    line = LONGFROMMR(Sci(SCI_LINEFROMPOSITION, MPFROMLONG(pos), 0));
+    col  = LONGFROMMR(Sci(SCI_GETCOLUMN, MPFROMLONG(pos), 0));
+    sprintf(sz, "Ln %ld, Col %ld", (long)line + 1, (long)col + 1);
+    WinSetWindowText(hwndStatus[0], (PSZ)sz);
+
+    selStart = LONGFROMMR(Sci(SCI_GETSELECTIONSTART, 0, 0));
+    selEnd   = LONGFROMMR(Sci(SCI_GETSELECTIONEND, 0, 0));
+    if (selEnd > selStart) {
+        LONG l1 = LONGFROMMR(Sci(SCI_LINEFROMPOSITION, MPFROMLONG(selStart), 0));
+        LONG l2 = LONGFROMMR(Sci(SCI_LINEFROMPOSITION, MPFROMLONG(selEnd), 0));
+        sprintf(sz, "Sel %ld ch, %ld ln", (long)(selEnd - selStart), (long)(l2 - l1 + 1));
+    } else {
+        sprintf(sz, "%ld lines", (long)LONGFROMMR(Sci(SCI_GETLINECOUNT, 0, 0)));
+    }
+    WinSetWindowText(hwndStatus[1], (PSZ)sz);
+
+    eol = LONGFROMMR(Sci(SCI_GETEOLMODE, 0, 0));
+    sprintf(sz, "%s  %s", EncName(iEncoding),
+            eol == SC_EOL_CRLF ? "CR+LF" : (eol == SC_EOL_CR ? "CR" : "LF"));
+    WinSetWindowText(hwndStatus[2], (PSZ)sz);
+
+    sprintf(sz, "%s%s%s", Style_Name(iScheme),
+            bReadOnly ? "  R/O" : "",
+            LONGFROMMR(Sci(SCI_GETMODIFY, 0, 0)) ? "  *" : "");
+    WinSetWindowText(hwndStatus[3], (PSZ)sz);
+}
+
 
 /*--------------------------------------------------------------------------
  * File I/O.  DosOpen/DosRead/DosWrite/DosClose per os2ref/file-io.md 1.
@@ -451,6 +497,7 @@ static void LoadSettings(void)
     bMarkOccWord     = IniGetInt(SEC_VIEW, "MarkOccurrencesMatchWords", bMarkOccWord);
     bSuppressEOLChanged = IniGetInt(SEC_VIEW, "SuppressEOLMessage", bSuppressEOLChanged);
     iEncoding           = IniGetInt(SEC_VIEW, "DefaultEncoding", iEncoding);
+    bStatusbar          = IniGetInt(SEC_VIEW, "Statusbar", bStatusbar);
 
     swpSaved.x  = IniGetInt(SEC_WIN, "X",  -1);
     swpSaved.y  = IniGetInt(SEC_WIN, "Y",  -1);
@@ -505,6 +552,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("MarkOccurrencesMatchWords", bMarkOccWord);
     IniWriteInt("SuppressEOLMessage",        bSuppressEOLChanged);
     IniWriteInt("DefaultEncoding",           iEncoding);
+    IniWriteInt("Statusbar",                 bStatusbar);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
@@ -659,6 +707,7 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_FOLDING,        &bFolding        },
             { IDM_AUTOINDENT,     &bAutoIndent     },
             { IDM_READONLY,       &bReadOnly       },
+            { IDM_STATUSBAR,      &bStatusbar      },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
             { 0, NULL }
         };
@@ -750,14 +799,61 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             ApplyView();
             WinSetFocus(HWND_DESKTOP, hwndSci);
         }
+        {
+            /* Four panels: caret position, selection, encoding + line endings,
+             * and document mode. SS_TEXT takes its alignment from the DT_*
+             * flags in the low style byte [os2ref/pm-controls.md 6]. */
+            static const ULONG aId[4] = { IDC_STATUS_POS, IDC_STATUS_SEL,
+                                          IDC_STATUS_ENC, IDC_STATUS_MODE };
+            int i;
+            for (i = 0; i < 4; i++)
+                hwndStatus[i] = WinCreateWindow(hwnd, (PSZ)WC_STATIC, (PSZ)"",
+                        WS_VISIBLE | SS_TEXT | DT_LEFT | DT_VCENTER,
+                        0, 0, 0, 0, hwnd, HWND_TOP, aId[i], NULL, NULL);
+            /* Size the bar from the font, not a guess: a bigger system font
+             * must not clip the text. */
+            {
+                HPS hps = WinGetPS(hwnd);
+                FONTMETRICS fm;
+                if (hps != NULLHANDLE) {
+                    if (GpiQueryFontMetrics(hps, sizeof(fm), &fm))
+                        cyStatus = fm.lMaxBaselineExt + 6;
+                    WinReleasePS(hps);
+                }
+                if (cyStatus < 14) cyStatus = 14;
+            }
+        }
         return (MRESULT)0;
 
-    case WM_SIZE:
+    case WM_SIZE: {
+        LONG cx = (LONG)SHORT1FROMMP(mp2);
+        LONG cy = (LONG)SHORT2FROMMP(mp2);
+        LONG cyBar = bStatusbar ? cyStatus : 0;
+        int i;
+
+        /* Bottom-left origin: the statusbar sits at y = 0 and the editor
+         * ABOVE it, which is the opposite of the arithmetic a Win32 layout
+         * would use [os2ref/gpi-drawing.md, coordinate origin]. */
         if (hwndSci != NULLHANDLE)
-            WinSetWindowPos(hwndSci, HWND_TOP, 0, 0,
-                            SHORT1FROMMP(mp2), SHORT2FROMMP(mp2),
+            WinSetWindowPos(hwndSci, HWND_TOP, 0, cyBar, cx, cy - cyBar,
                             SWP_SIZE | SWP_MOVE | SWP_SHOW);
+        for (i = 0; i < 4; i++) {
+            if (hwndStatus[i] == NULLHANDLE)
+                continue;
+            if (!bStatusbar) {
+                WinShowWindow(hwndStatus[i], FALSE);
+                continue;
+            }
+            {
+                LONG w = cx / 4;
+                LONG x = w * i;
+                if (i == 3) w = cx - x;          /* last panel takes the rest */
+                WinSetWindowPos(hwndStatus[i], HWND_TOP, x + 4, 2, w - 6, cyBar - 4,
+                                SWP_SIZE | SWP_MOVE | SWP_SHOW);
+            }
+        }
         return (MRESULT)0;
+    }
 
     /* NOTE: do NOT forward focus to the editor from WM_SETFOCUS.
      * PM gives focus to the menu window while a pulled-down menu is being navigated;
@@ -784,8 +880,10 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
          * was first restored from the settings file as non-zero. */
         if (SHORT1FROMMP(mp1) == 2000 && SHORT2FROMMP(mp1) == 0 && iMarkOccurrences) {
             SCNotification *pscn = (SCNotification *)PVOIDFROMMP(mp2);
-            if (pscn && pscn->nmhdr.code == SCN_UPDATEUI)
+            if (pscn && pscn->nmhdr.code == SCN_UPDATEUI) {
                 EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
+                UpdateStatusbar();
+            }
         }
         return (MRESULT)0;
 
@@ -1042,6 +1140,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_STATUSBAR: {
+            RECTL rcl;
+            bStatusbar = !bStatusbar;
+            /* Re-run the layout: WM_SIZE owns it, so ask for one rather than
+             * duplicating the arithmetic here. */
+            WinQueryWindowRect(hwnd, &rcl);
+            WinSendMsg(hwnd, WM_SIZE, 0,
+                       MPFROM2SHORT((SHORT)(rcl.xRight - rcl.xLeft),
+                                    (SHORT)(rcl.yTop - rcl.yBottom)));
+            UpdateStatusbar();
+            SyncMenu(hwndFrame);
+            break;
+        }
+
         case IDM_LONGLINEMARKER: bLongLineMarker = !bLongLineMarker; ApplyView(); SyncMenu(hwndFrame); break;
         case IDM_INDENTGUIDES:   bIndentGuides   = !bIndentGuides;   ApplyView(); SyncMenu(hwndFrame); break;
         case IDM_SHOWWHITESPACE: bShowWhitespace = !bShowWhitespace; ApplyView(); SyncMenu(hwndFrame); break;

@@ -187,6 +187,7 @@ BEGIN
             MENUITEM "Match ~Whole Words Only", IDM_MARKOCC_WORD
         END
         MENUITEM SEPARATOR
+        MENUITEM "Show Status~bar",        IDM_STATUSBAR
         MENUITEM "Line ~Numbers",          IDM_LINENUMBERS
         MENUITEM "Selection ~Margin",      IDM_SELMARGIN
         MENUITEM "~Code Folding",          IDM_FOLDING

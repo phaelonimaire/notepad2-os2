@@ -276,3 +276,10 @@
 #define IDM_RELOAD_ANSI     398
 #define IDM_RELOAD_OEM      399
 #define IDM_RELOAD_UTF8     400
+
+/* Statusbar */
+#define IDM_STATUSBAR       410
+#define IDC_STATUS_POS      800
+#define IDC_STATUS_SEL      801
+#define IDC_STATUS_ENC      802
+#define IDC_STATUS_MODE     803
