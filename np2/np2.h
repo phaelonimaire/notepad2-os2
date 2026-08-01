@@ -298,3 +298,9 @@
 #define IDC_RECENTLIST      820
 #define IDC_RECENTREMOVE    821
 #define IDC_RECENTCLEAR     822
+
+/* File browser (WC_CONTAINER) */
+#define IDM_BROWSE          413
+#define IDD_BROWSE          560
+#define IDC_BROWSECNR       830
+#define IDC_BROWSEPATH      831

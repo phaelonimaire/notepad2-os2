@@ -33,6 +33,7 @@
 #include "np2style.h"
 #include "np2ini.h"
 #include "np2run.h"
+#include "np2browse.h"
 #include "np2enc.h"
 #include "pmhelpers.h"
 
@@ -89,6 +90,7 @@ static int  iFontSize = 11;
 static CHAR szIniPath[CCHMAXPATH] = "";
 static CHAR szExePath[CCHMAXPATH] = "";   /* for Launch > New Window */
 static CHAR szRunCmd[300] = "";
+static CHAR szBrowseDir[CCHMAXPATH] = "";
 static CHAR aMru[NP2_MRU_MAX][CCHMAXPATH];
 static int  cMru = 0;
 
@@ -498,6 +500,7 @@ static void LoadSettings(void)
     settings.iWordWrapSymbols    = (SHORT)IniGetInt(SEC_SET, "WordWrapSymbols", settings.iWordWrapSymbols);
     settings.bShowWordWrapSymbols = IniGetInt(SEC_SET, "ShowWordWrapSymbols", settings.bShowWordWrapSymbols);
     IniGetStr(SEC_SET, "FontFace", szFontFace, szFontFace, sizeof(szFontFace));
+    IniGetStr(SEC_SET, "BrowseDir", "", szBrowseDir, sizeof(szBrowseDir));
     iFontSize = IniGetInt(SEC_SET, "FontSize", iFontSize);
 
     bWordWrap        = IniGetInt(SEC_VIEW, "WordWrap", bWordWrap);
@@ -578,6 +581,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("WordWrapSymbols",     settings.iWordWrapSymbols);
     IniWriteInt("ShowWordWrapSymbols", settings.bShowWordWrapSymbols);
     IniWriteStr("FontFace",            szFontFace);
+    IniWriteStr("BrowseDir",           szBrowseDir);
     IniWriteInt("FontSize",            iFontSize);
 
     IniWriteSection(SEC_VIEW);
@@ -1318,6 +1322,21 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- Syntax scheme and font ---------------------------------------- */
+        case IDM_BROWSE: {
+            CHAR szPick[CCHMAXPATH];
+            if (BrowseDlg(hwnd, szBrowseDir, sizeof(szBrowseDir),
+                          szPick, sizeof(szPick))) {
+                if (ConfirmDiscard(hwnd)) {
+                    szStatus[0] = '\0';
+                    LoadFile(hwnd, (PSZ)szPick);
+                    ShowStatus();
+                    SyncMenu(hwndFrame);
+                    WinInvalidateRect(hwndSci, NULL, TRUE);
+                }
+            }
+            break;
+        }
+
         case IDM_RECENT: {
             CHAR szPick[CCHMAXPATH];
             if (EditRecentDlg(hwnd, aMru, &cMru, szPick, sizeof(szPick))) {

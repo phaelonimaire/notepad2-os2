@@ -11,6 +11,7 @@ BEGIN
         MENUITEM "Save ~as...",      IDM_SAVEAS
         MENUITEM "Re~vert",          IDM_REVERT
         MENUITEM "Recent F~iles...", IDM_RECENT
+        MENUITEM "Bro~wse...",       IDM_BROWSE
         MENUITEM SEPARATOR
         MENUITEM "~Read Only",       IDM_READONLY
         SUBMENU "~Encoding", IDM_ENC_MENU
@@ -379,6 +380,25 @@ BEGIN
 
         DEFPUSHBUTTON "OK",     DID_OK,     220, 148, 56, 14
         PUSHBUTTON    "Cancel", DID_CANCEL, 220, 130, 56, 14
+    END
+END
+
+DLGTEMPLATE IDD_BROWSE
+BEGIN
+    DIALOG "Browse", IDD_BROWSE, 20, 20, 360, 220, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT "Directory:", -1, 8, 202, 60, 8
+        LTEXT "", IDC_BROWSEPATH, 70, 202, 282, 8
+
+        /* CCS_MINIRECORDCORE makes records MINIRECORDCORE rather than
+           RECORDCORE - the struct the code allocates must match this style
+           [os2ref/pm-controls.md 15]. */
+        CONTROL "", IDC_BROWSECNR, 8, 40, 344, 156, WC_CONTAINER,
+                CCS_MINIRECORDCORE | CCS_SINGLESEL | CCS_AUTOPOSITION |
+                WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        DEFPUSHBUTTON "~Open",   DID_OK,     232, 14, 56, 14
+        PUSHBUTTON    "Cancel",  DID_CANCEL, 296, 14, 56, 14
     END
 END
 
