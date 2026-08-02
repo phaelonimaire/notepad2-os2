@@ -8,7 +8,7 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands (distinct) | 146 | 141 (~97%) |
+| Menu commands (distinct) | 146 | 143 — every one that applies |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
@@ -23,17 +23,17 @@ iconv -f UTF-16LE -t UTF-8 src/Notepad2.rc > /tmp/n2.rc   # the original is UTF-
 > **The old "245" was wrong, and flattered nothing — it undersold the port.** It counted every
 > `MENUITEM` line in the whole `.rc`: separators, and `IDR_POPUPMENU`, which repeats main-menu
 > commands. Notepad2's actual main menu holds **146 distinct commands**. Comparing by *label*
-> (ids were renamed, so a name diff finds nothing) this port covers **141**.
+> (ids were renamed, so a name diff finds nothing) this port covers **143 — every one that has an
+> OS/2 meaning**.
 
-The five not covered, and none is simply unwritten:
+**The command surface is complete.** The three below are not unwritten work; each is absent because
+the platform gives the feature nothing to mean, and each was checked rather than assumed:
 
 | Not covered | Why |
 |---|---|
-| 2nd default scheme | **Design decision.** This port shares one semantic palette across schemes — a deliberate departure from Notepad2's per-style editing, recorded in `np2style.h`. The item either means "the palette gains a second saved copy" or it is an artefact of the model this port did not follow. Someone should choose. |
-| Customize toolbar | **Design decision.** There is no PM toolbar class; the bar is a composed row of `WC_BUTTON`s, so what is configurable — button set, order, visibility — has to be settled before a dialog can edit it. |
 | Minimize to tray | **N/A.** WarpCenter has no system tray. XWorkplace's taskbar does, which would be an add-on dependency. |
 | Encoding `More...` | **N/A.** Notepad2 needs a picker because it offers every installed code page; this port supports six and lists them all on the menu. Revisit if that changes. |
-| Transparent mode | **Probably N/A** — PM on Warp 4.5x has no per-window alpha. Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it. |
+| Transparent mode | **N/A, measured.** No per-window alpha exists: zero matches for `AlphaBlend`/`SetWindowAlpha`/`WS_EX_LAYERED`-style flags and no `Gpi*Alpha*` entry point in `os2emx.h` — against positive controls (`WS_VISIBLE`, `SWP_MOVE`) that match, so the probe works. |
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
