@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 174 (~71%) |
+| Menu commands | 245 | 180 (~73%) |
 | Dialogs | 27 | 18 |
-| App-layer code | 26,796 lines | 8,375 lines |
+| App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 182, but this counts separators
-grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 28
+grep -c '^ *MENUITEM' np2/np2.rc              # 190, but this counts separators
+grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-182 − 28 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **174**.
+190 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **180**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -175,12 +175,15 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
    "Customize Colours"). ~~Five are done~~ — commit `6a02dc8`: Select to Next / Previous, Replace
    Next, Use Selection as Find Text, Swap with Clipboard, Complete Word.
 
+   ~~Six more done~~ — commit `c80836d`: Save Copy, Auto-Complete Words as You Type, Save Settings
+   on Exit, Remember Recent Files, Remember Search Strings, Sticky Window Position.
+
    Genuinely outstanding, roughly in order of value:
-   - **File**: Save Copy, Properties, and the Favorites trio (Open / Add current / Manage).
+   - **File**: Properties, and the Favorites trio (Open / Add current / Manage).
    - **Encoding**: the `More...` selection dialog, Recode, and the Unicode item.
-   - **View toggles** that only need a settings flag: 2nd default scheme, Sticky window position,
-     Save settings on exit, Remember recent files, Remember search strings, Auto-complete words,
-     Text excerpt, Transparent mode.
+   - **View**: 2nd default scheme, Text excerpt.
+   - **Probably not applicable**: Transparent mode — PM on Warp 4.5x has no per-window alpha.
+     Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it.
    - **Needs design, not just work**: Reuse window / Single file instance (one-instance IPC),
      Customize toolbar, Command line help.
    - **Not applicable**: Minimize to tray — WarpCenter has no tray. See "Not applicable" below.
