@@ -43,6 +43,7 @@ void EditSwapClipboard(HWND h);
 void EditSelectWord(HWND h);
 LONG EditGetSelOrWord(HWND h, char *pszOut, LONG cchOut);
 BOOL EditCompleteWord(HWND h);
+void EditGetExcerpt(HWND h, char *pszOut, int cchOut);
 void EditFindMatchingBrace(HWND h, BOOL bSelect);
 
 /* Insert */

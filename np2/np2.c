@@ -199,6 +199,9 @@ static void SetFileName(const char *pszFile)
         strcpy(szFileName, pszFile);
 }
 static CHAR szStatus[256] = "";
+/* A condensed excerpt of the selection, shown in place of the filename while it
+ * is set. Cleared by invoking the command with no selection. */
+static CHAR szTitleExcerpt[96] = "";
 static HWND hwndFrameGlobal = NULLHANDLE;
 
 /* Search state persists across dialog invocations, as it does in Notepad2 -
@@ -232,6 +235,9 @@ static void ShowStatus(void)
     } else {
         strcpy(szShown, szFileName);
     }
+
+    if (szTitleExcerpt[0])
+        sprintf(szShown, "\"%s\"", szTitleExcerpt);
 
     sprintf(szTitle, "%s%s%s - Notepad2 for OS/2",
             szShown,
@@ -1537,6 +1543,15 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_TEXTEXCERPT:
+            /* Notepad2 shows the excerpt instead of the filename. Invoking it
+             * with nothing selected clears it, which is how you get the name
+             * back. */
+            EditGetExcerpt(hwndSci, szTitleExcerpt, sizeof(szTitleExcerpt));
+            ShowStatus();
+            SyncMenu(hwndFrame);
+            break;
+
         case IDM_PROPERTIES:
             /* Win32 opens a shell property sheet; the Workplace Shell's settings
              * notebook is the same thing on OS/2. Needs the file to exist as an

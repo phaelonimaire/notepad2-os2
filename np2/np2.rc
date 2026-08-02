@@ -223,6 +223,7 @@ BEGIN
         MENUITEM "Zoom ~In\tCtrl+Plus",   IDM_ZOOMIN
         MENUITEM "Zoom ~Out\tCtrl+Minus", IDM_ZOOMOUT
         MENUITEM "~Reset Zoom",            IDM_RESETZOOM
+        MENUITEM "Text E~xcerpt in Title", IDM_TEXTEXCERPT
         MENUITEM SEPARATOR
         MENUITEM "File C~hange Notification...\tAlt+F5", IDM_CHANGENOTIFY
     END

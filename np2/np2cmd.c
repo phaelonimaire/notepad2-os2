@@ -1054,3 +1054,64 @@ BOOL EditCompleteWord(HWND h)
         free(apWords[i]);
     return TRUE;
 }
+
+/* Build a one-line excerpt of the selection for the title bar: runs of white
+ * space (including line breaks) collapse to a single space, the result is
+ * trimmed, and anything too long is cut with an ellipsis. An empty or
+ * rectangular selection yields an empty string, which the caller reads as
+ * "nothing to show". */
+void EditGetExcerpt(HWND h, char *pszOut, int cchOut)
+{
+    LONG  s, e, n;
+    char *pRaw;
+    int   o = 0;
+    struct Sci_TextRange tr;
+
+    if (cchOut < 8)
+        return;
+    pszOut[0] = '\0';
+
+    if (IsRect(h))
+        return;
+    s = SciL(h, SCI_GETSELECTIONSTART, 0);
+    e = SciL(h, SCI_GETSELECTIONEND, 0);
+    if (e <= s)
+        return;
+
+    /* Read at most what can survive the collapse, not the whole selection. */
+    n = e - s;
+    if (n > cchOut * 4)
+        n = cchOut * 4;
+    pRaw = (char *)malloc((size_t)n + 1);
+    if (!pRaw)
+        return;
+    tr.chrg.cpMin = s;
+    tr.chrg.cpMax = s + n;
+    tr.lpstrText  = pRaw;
+    SciP(h, SCI_GETTEXTRANGE, 0, &tr);
+    pRaw[n] = '\0';
+
+    {
+        const char *p = pRaw;
+        while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+            p++;                                   /* leading space */
+        for (; *p && o < cchOut - 1; p++) {
+            if (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') {
+                pszOut[o++] = ' ';
+                while (p[1] == ' ' || p[1] == '\t' || p[1] == '\r' || p[1] == '\n')
+                    p++;
+            } else {
+                pszOut[o++] = *p;
+            }
+        }
+        while (o > 0 && pszOut[o - 1] == ' ')
+            o--;                                   /* trailing space */
+        pszOut[o] = '\0';
+    }
+    free(pRaw);
+
+    /* Truncated, or more selection than was read: say so rather than implying
+     * the excerpt is the whole of it. */
+    if (o >= cchOut - 1 || (e - s) > n)
+        strcpy(pszOut + (cchOut - 4 < o ? cchOut - 4 : o), "...");
+}
