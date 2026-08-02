@@ -206,15 +206,9 @@ Every one of these cost real time at least once, and none is catchable by the co
 
 - `CreateCallTipWindow` is a no-op (call tips absent) — a visible absence rather than silent
   corruption, by design.
-- **The context menu builds but does not draw** (commit `2b4a2ed`). `AddToPopUp` is implemented and
-  measured correct — `MM_QUERYITEMCOUNT` reports the 9 items `ScintillaBase::ContextMenu` inserts —
-  `WinPopupMenu` returns TRUE with `WinGetLastError` 0, and nothing appears. `WM_BUTTON2DOWN`, the
-  `WM_COMMAND` routing and the Shift+F10 accelerator are all wired and the accelerator is verified
-  to fire. Ruled out by measurement, so do not re-test: the immediate `Destroy()` after
-  `WinPopupMenu` (a real bug, fixed); an `HWND_OBJECT` parent with and without re-parenting;
-  `WinCreateMenu` vs `WinCreateWindow`; the popup position; and the key-up events arriving straight
-  after the accelerator. **Next step: a standalone PM program that pops up a menu with no Scintilla
-  in it**, to find out whether the fault is in this usage of `WinPopupMenu` at all.
+- ~~The context menu~~ **Done** — commit `7c74970`. `AddToPopUp` builds it with `MM_INSERTITEM`,
+  `WM_BUTTON2DOWN` and Shift+F10 both raise it, and choosing an item dispatches. Verified on screen
+  including the per-item enabled states.
 - `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`).
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
