@@ -26,6 +26,12 @@ BOOL RunOpenDocument(HWND hwndOwner, const char *pszFile);
  * Win32's shell property sheet. */
 BOOL RunObjectSettings(HWND hwndOwner, const char *pszFile);
 
+/* One running instance: find it, hand it a file, and take the hand-off. The
+ * filename travels through the system atom table - PM has no WM_COPYDATA. */
+HWND Np2FindInstance(const char *pszClientClass);
+BOOL Np2HandOffFile(HWND hwndClient, ULONG msg, const char *pszFile);
+BOOL Np2TakeHandOff(ULONG atomValue, char *pszOut, int cchOut);
+
 /* Notepad2's Run dialog: a command line, executed via RunProgram. */
 BOOL RunCommandDlg(HWND hwndOwner, char *pszCmd, int cchCmd);
 

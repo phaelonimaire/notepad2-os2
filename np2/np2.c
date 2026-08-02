@@ -113,6 +113,7 @@ static BOOL bSaveRecentFiles    = TRUE;
 static BOOL bSaveFindReplace    = TRUE;
 static BOOL bStickyWindowPos    = FALSE;
 static BOOL bAutoCompleteWords  = FALSE;
+static BOOL bReuseWindow        = FALSE;
 
 /* An MRU entry must be fully qualified or it only reopens from the directory
  * it was first opened in - "demo.c" from a command line is a real example.
@@ -630,6 +631,7 @@ static void LoadSettings(void)
     bSaveFindReplace    = IniGetInt(SEC_VIEW, "SaveFindReplace", bSaveFindReplace);
     bStickyWindowPos    = IniGetInt(SEC_VIEW, "StickyWindowPosition", bStickyWindowPos);
     bAutoCompleteWords  = IniGetInt(SEC_VIEW, "AutoCompleteWords", bAutoCompleteWords);
+    bReuseWindow        = IniGetInt(SEC_VIEW, "ReuseWindow", bReuseWindow);
 
     /* Notepad2's own key names and numbering, so an .ini is readable by both. */
     FileWatchSetOptions(IniGetInt(SEC_SET, "FileWatchingMode", FILEWATCH_NONE),
@@ -741,6 +743,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("SaveFindReplace",           bSaveFindReplace);
     IniWriteInt("StickyWindowPosition",      bStickyWindowPos);
     IniWriteInt("AutoCompleteWords",         bAutoCompleteWords);
+    IniWriteInt("ReuseWindow",               bReuseWindow);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
@@ -946,6 +949,7 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_SAVEFINDREPL,   &bSaveFindReplace    },
             { IDM_STICKYWINPOS,   &bStickyWindowPos    },
             { IDM_AUTOCOMPWORDS,  &bAutoCompleteWords  },
+            { IDM_REUSEWINDOW,    &bReuseWindow        },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
             { 0, NULL }
         };
@@ -1158,6 +1162,21 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     /* Esc reaches the client because the editor passes keys it does not use
      * to WinDefWindowProc, which forwards them to the owner - the contract in
      * os2ref/pm-window-messaging.md that also makes the menu mnemonics work. */
+    case NP2_OPENFILE: {
+        /* A second instance handed us a file. The name arrived as an atom in
+         * the system atom table; Np2TakeHandOff reads it back and releases it. */
+        CHAR szHand[CCHMAXPATH];
+        if (Np2TakeHandOff((ULONG)LONGFROMMP(mp1), szHand, sizeof(szHand)) &&
+            szHand[0] && ConfirmDiscard(hwnd)) {
+            szStatus[0] = '\0';
+            LoadFile(hwnd, (PSZ)szHand);
+            ShowStatus();
+            SyncMenu(WinQueryWindow(hwnd, QW_PARENT));
+            WinInvalidateRect(hwndSci, NULL, TRUE);
+        }
+        return (MRESULT)0;
+    }
+
     case WM_TIMER:
         if (SHORT1FROMMP(mp1) == IDT_WATCH)
             FileWatchTick(hwnd);
@@ -1578,6 +1597,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         case IDM_SAVEFINDREPL:  bSaveFindReplace    = !bSaveFindReplace;    SyncMenu(hwndFrame); break;
         case IDM_STICKYWINPOS:  bStickyWindowPos    = !bStickyWindowPos;    SyncMenu(hwndFrame); break;
         case IDM_AUTOCOMPWORDS: bAutoCompleteWords  = !bAutoCompleteWords;  SyncMenu(hwndFrame); break;
+        case IDM_REUSEWINDOW:   bReuseWindow        = !bReuseWindow;        SyncMenu(hwndFrame); break;
 
         case IDM_SELTONEXT:
         case IDM_SELTOPREV:
@@ -2000,6 +2020,23 @@ int main(int argc, char *argv[])
     IniResolvePath(szExePath[0] ? szExePath : (argc > 0 ? argv[0] : NULL),
                    szIniPath, sizeof(szIniPath));
     LoadSettings();
+
+    /* Reuse Window: if another instance is already up, give it the file and
+     * leave, rather than opening a second window on the same document. Checked
+     * BEFORE this process creates its own frame, so there is nothing to skip. */
+    if (bReuseWindow && argc > 1 && argv[1] && argv[1][0]) {
+        HWND hwndOther = Np2FindInstance("Notepad2Client");
+        if (hwndOther != NULLHANDLE) {
+            CHAR szFull[CCHMAXPATH];
+            if (DosQueryPathInfo((PSZ)argv[1], FIL_QUERYFULLNAME,
+                                 szFull, sizeof(szFull)) != NO_ERROR)
+                strcpy(szFull, argv[1]);
+            if (Np2HandOffFile(hwndOther, NP2_OPENFILE, szFull)) {
+                WinDestroyMsgQueue(hmq); WinTerminate(hab);
+                return 0;
+            }
+        }
+    }
 
     Scintilla_RegisterClasses((void *)hab);
     WinRegisterClass(hab, (PSZ)"Notepad2Client", ClientWndProc, CS_SIZEREDRAW, 0);

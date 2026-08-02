@@ -242,6 +242,7 @@ BEGIN
         MENUITEM "~Remember Recent Files",   IDM_SAVERECENT
         MENUITEM "Remem~ber Search Strings", IDM_SAVEFINDREPL
         MENUITEM "Stic~ky Window Position",  IDM_STICKYWINPOS
+        MENUITEM "Reuse Window (~Hand Off Files)", IDM_REUSEWINDOW
         MENUITEM SEPARATOR
         SUBMENU "Window Title ~Display", IDM_TITLE_MENU
         BEGIN

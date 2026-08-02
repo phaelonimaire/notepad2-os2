@@ -331,6 +331,11 @@
 #define IDM_AUTOCOMPWORDS   447
 #define IDM_PROPERTIES      448
 #define IDM_TEXTEXCERPT     449
+#define IDM_REUSEWINDOW     450
+
+/* A second instance hands its filename to the first through the system atom
+ * table; mp1 carries the ATOM. See np2run.c. */
+#define NP2_OPENFILE (WM_USER + 50)
 #define IDD_CHANGENOTIFY    565
 #define IDC_WATCH_NONE      840
 #define IDC_WATCH_MSGBOX    841

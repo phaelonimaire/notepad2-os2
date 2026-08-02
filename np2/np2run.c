@@ -175,3 +175,74 @@ BOOL RunCommandDlg(HWND hwndOwner, char *pszCmd, int cchCmd)
     return (BOOL)(WinDlgBox(HWND_DESKTOP, hwndOwner, RunDlgProc, NULLHANDLE,
                             IDD_RUN, &ra) == DID_OK);
 }
+
+/* ---- One running instance -------------------------------------------------
+ *
+ * Win32 finds the existing window with FindWindow and hands it the filename in
+ * a WM_COPYDATA. PM has neither: WinPostMsg carries two MPARAMs and nothing
+ * else, and a pointer in one of them is meaningless in another process.
+ *
+ * The OS/2 route is the SYSTEM ATOM TABLE, which "can be accessed by any
+ * process in the system ... created at boot time and cannot be destroyed"
+ * [DOC-IBM - pm2.txt, WinQuerySystemAtomTable Remarks]. An atom is a string
+ * with a system-wide integer name, so the filename goes in as an atom and only
+ * the ATOM travels in the message. The receiver reads the name back and deletes
+ * the atom, which is what releases it.
+ */
+
+/* Find a running instance's client window, or NULLHANDLE. Must be called
+ * BEFORE this process creates its own frame, so there is nothing to skip. */
+HWND Np2FindInstance(const char *pszClientClass)
+{
+    HENUM  henum;
+    HWND   hwndFrame, hwndFound = NULLHANDLE;
+    CHAR   szClass[64];
+
+    henum = WinBeginEnumWindows(HWND_DESKTOP);
+    while ((hwndFrame = WinGetNextWindow(henum)) != NULLHANDLE) {
+        HWND hwndClient = WinWindowFromID(hwndFrame, FID_CLIENT);
+        if (hwndClient == NULLHANDLE)
+            continue;
+        if (WinQueryClassName(hwndClient, sizeof(szClass), (PCH)szClass) > 0 &&
+            strcmp(szClass, pszClientClass) == 0) {
+            hwndFound = hwndClient;
+            break;
+        }
+    }
+    WinEndEnumWindows(henum);
+    return hwndFound;
+}
+
+/* Hand a file to that instance and raise it. The atom is deleted by the
+ * receiver, not here: this process is about to exit. */
+BOOL Np2HandOffFile(HWND hwndClient, ULONG msg, const char *pszFile)
+{
+    HATOMTBL hatomtbl = WinQuerySystemAtomTable();
+    ATOM     atom;
+
+    if (hwndClient == NULLHANDLE || !pszFile || !pszFile[0])
+        return FALSE;
+    atom = WinAddAtom(hatomtbl, (PCSZ)pszFile);
+    if (atom == 0)
+        return FALSE;
+    if (!WinPostMsg(hwndClient, msg, MPFROMLONG((LONG)atom), 0)) {
+        WinDeleteAtom(hatomtbl, atom);
+        return FALSE;
+    }
+    WinSetActiveWindow(HWND_DESKTOP, WinQueryWindow(hwndClient, QW_PARENT));
+    return TRUE;
+}
+
+/* Receiver side: recover the filename from the atom and release it. */
+BOOL Np2TakeHandOff(ULONG atomValue, char *pszOut, int cchOut)
+{
+    HATOMTBL hatomtbl = WinQuerySystemAtomTable();
+    ATOM     atom = (ATOM)atomValue;
+    ULONG    cch;
+
+    if (atom == 0)
+        return FALSE;
+    cch = WinQueryAtomName(hatomtbl, atom, (PSZ)pszOut, (ULONG)cchOut);
+    WinDeleteAtom(hatomtbl, atom);
+    return (cch > 0);
+}
