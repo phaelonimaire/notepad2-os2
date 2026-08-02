@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 180 (~73%) |
+| Menu commands | 245 | 181 (~74%) |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 190, but this counts separators
+grep -c '^ *MENUITEM' np2/np2.rc              # 191, but this counts separators
 grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-190 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **180**.
+191 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **181**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -179,7 +179,10 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
    on Exit, Remember Recent Files, Remember Search Strings, Sticky Window Position.
 
    Genuinely outstanding, roughly in order of value:
-   - **File**: Properties, and the Favorites trio (Open / Add current / Manage).
+   - ~~**File**: Properties~~ — **done**, commit `dfb2da7`, on the WPS settings notebook. The
+     Favorites trio was a **false positive**: the port already has Open (`IDM_FAVORITES`, whose pick
+     dialog also removes entries, covering "Manage") and Add (`IDM_ADDTOFAV`). Notepad2 splits them
+     across a submenu; this port folds them into two items.
    - **Encoding**: the `More...` selection dialog, Recode, and the Unicode item.
    - **View**: 2nd default scheme, Text excerpt.
    - **Probably not applicable**: Transparent mode — PM on Warp 4.5x has no per-window alpha.
