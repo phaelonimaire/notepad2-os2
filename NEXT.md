@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 181 (~74%) |
+| Menu commands | 245 | 184 (~75%) |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 191, but this counts separators
+grep -c '^ *MENUITEM' np2/np2.rc              # 194, but this counts separators
 grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-191 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **181**.
+194 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **184**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -183,7 +183,12 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
      Favorites trio was a **false positive**: the port already has Open (`IDM_FAVORITES`, whose pick
      dialog also removes entries, covering "Manage") and Add (`IDM_ADDTOFAV`). Notepad2 splits them
      across a submenu; this port folds them into two items.
-   - **Encoding**: the `More...` selection dialog, Recode, and the Unicode item.
+   - ~~**Encoding**~~ — **done / not applicable**, commit `5b2d826`. *Recode* is this port's
+     **Reload As**, now covering all six supported encodings. *Unicode* is already the
+     `Unicode (UCS-2 LE)` item on the Encoding submenu. A `More...` selection dialog adds nothing
+     over a six-item menu — Notepad2 needs one because it offers every installed code page; revisit
+     if this port ever does. Fixing Reload As found a decoder bug: the byte-order mark was skipped
+     unconditionally, so every BOM-less UTF-16 file lost its first character.
    - **View**: 2nd default scheme, Text excerpt.
    - **Probably not applicable**: Transparent mode — PM on Warp 4.5x has no per-window alpha.
      Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it.
