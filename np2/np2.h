@@ -308,6 +308,7 @@
  * contiguous and in FILEWATCH_* order - np2watch.c indexes them as
  * IDC_WATCH_NONE + mode. */
 #define IDM_CHANGENOTIFY    433
+#define IDM_CONTEXTMENU     434
 #define IDD_CHANGENOTIFY    565
 #define IDC_WATCH_NONE      840
 #define IDC_WATCH_MSGBOX    841

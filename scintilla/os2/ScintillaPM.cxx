@@ -149,6 +149,9 @@ public:
 
 	static void Register(HAB hab_);
 	static MRESULT EXPENTRY SciWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2);
+	// ContextMenu() is protected in ScintillaBase; this is the one thing the
+	// application needs to reach from outside.
+	void ShowContextMenuAtCaret() { ContextMenu(PointMainCaret()); }
 
 	MRESULT WndProc(ULONG msg, MPARAM mp1, MPARAM mp2);
 
@@ -507,9 +510,27 @@ void ScintillaPM::CreateCallTipWindow(PRectangle) {
 	// harmless; a half-made window would crash inside CallTip::PaintCT.
 }
 
-void ScintillaPM::AddToPopUp(const char *, int, bool) {
-	// TODO: needs a WC_MENU popup (MM_INSERTITEM). Until then the context menu stays
-	// empty rather than showing entries that would not dispatch.
+// Scintilla builds the context menu one item at a time between Menu::CreatePopUp and
+// Menu::Show, so this appends to the popup that popup.CreatePopUp() just made.
+// An empty label means a separator - that is Scintilla's convention, not PM's, and
+// ScintillaBase::ContextMenu relies on it.
+void ScintillaPM::AddToPopUp(const char *label, int cmd, bool enabled) {
+	if (!popup.GetID())
+		return;
+	HWND hwndMenu = reinterpret_cast<HWND>(popup.GetID());
+
+	MENUITEM mi;
+	memset(&mi, 0, sizeof(mi));
+	mi.iPosition   = MIT_END;
+	mi.afStyle     = (label && *label) ? MIS_TEXT : MIS_SEPARATOR;
+	mi.afAttribute = enabled ? 0 : MIA_DISABLED;
+	mi.id          = static_cast<USHORT>(cmd);
+	mi.hwndSubMenu = NULLHANDLE;
+	mi.hItem       = 0;
+
+	// mp2 is the text even for a separator, where PM ignores it.
+	WinSendMsg(hwndMenu, MM_INSERTITEM, MPFROMP(&mi),
+		MPFROMP(const_cast<char *>(label ? label : "")));
 }
 
 // ---------------------------------------------------------------------------
@@ -589,6 +610,21 @@ MRESULT ScintillaPM::WndProc(ULONG msg, MPARAM mp1, MPARAM mp2) {
 		WinSetFocus(HWND_DESKTOP, hwnd);
 		ButtonDownWithModifiers(PtFromMsg(mp1), 0, CurrentModifiers());
 		return MRFROMLONG(TRUE);
+
+	case WM_BUTTON2DOWN:
+		// PM has no WM_CONTEXTMENU. Button 2 is the OS/2 context button, and the
+		// point needs the same y-flip as every other mouse message.
+		WinSetFocus(HWND_DESKTOP, hwnd);
+		ContextMenu(PtFromMsg(mp1));
+		return MRFROMLONG(TRUE);
+
+	case WM_COMMAND:
+		// Menu::Show names this window as the popup's owner, so the item the user
+		// picked arrives here rather than at the application frame - which is also
+		// why idcmdUndo..idcmdSelectAll (10..16) cannot collide with the app's own
+		// command ids.
+		Command(SHORT1FROMMP(mp1));
+		return 0;
 
 	case WM_BUTTON1UP:
 		ButtonUp(PtFromMsg(mp1), 0,
@@ -701,6 +737,18 @@ void ScintillaPM::Register(HAB hab_) {
 	// cbWindowData = sizeof(void *) reserves the per-window slot used above.
 	WinRegisterClass(hab_, (PSZ)scintillaPMClassName, ScintillaPM::SciWndProc,
 		CS_SIZEREDRAW | CS_CLIPCHILDREN, sizeof(void *));
+}
+
+// The keyboard route to the context menu has to come from the FRAME, not from here:
+// PM reserves F10 for activating the action bar and never delivers it to the focus
+// window, so a `case VK_F10` in WM_CHAR below can never fire (measured - the control
+// sees only VK_SHIFT). The application therefore binds Shift+F10 in its accelerator
+// table and calls this.
+extern "C" void Scintilla_ShowContextMenu(void *hwndSci) {
+	HWND h = reinterpret_cast<HWND>(hwndSci);
+	ScintillaPM *sci = static_cast<ScintillaPM *>(WinQueryWindowPtr(h, 0));
+	if (sci)
+		sci->ShowContextMenuAtCaret();
 }
 
 extern "C" void Scintilla_RegisterClasses(void *hab_) {

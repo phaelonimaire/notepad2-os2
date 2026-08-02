@@ -40,6 +40,7 @@
 #include "pmhelpers.h"
 
 extern "C" void Scintilla_RegisterClasses(void *hab);
+extern "C" void Scintilla_ShowContextMenu(void *hwndSci);
 
 static HWND  hwndSci = NULLHANDLE;
 static BOOL  bWordWrap    = FALSE;
@@ -1478,6 +1479,13 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_CONTEXTMENU:
+            /* Shift+F10 is the keyboard route to the editor's context menu.
+             * It cannot live in the control: PM never delivers F10 to the
+             * focus window. See scintilla/os2/ScintillaPM.cxx. */
+            Scintilla_ShowContextMenu((void *)hwndSci);
+            break;
+
         case IDM_CHANGENOTIFY:
             /* The dialog edits the mode; re-installing is what starts or stops
              * the timer, so it must run whether or not the mode changed. */

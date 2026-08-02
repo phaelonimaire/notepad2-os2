@@ -1552,6 +1552,11 @@ Menu::Menu() : mid(0) {
 // WinCreateWindow(..., WC_MENU, ...) with MS_ACTIONBAR omitted gives a popup menu.
 void Menu::CreatePopUp() {
 	Destroy();
+	// A floating menu is an OBJECT window, not a desktop child: "if hwndFrame is
+	// HWND_OBJECT (or an object window) the menu itself is created as an object
+	// window" [DOC-IBM pm2.txt:16649-16652]. WinCreateMenu with a null template is
+	// the documented way to build one programmatically and add items with
+	// MM_INSERTITEM; WinCreateWindow is the fallback if it declines the null.
 	HWND hwndMenu = WinCreateWindow(HWND_DESKTOP, WC_MENU, (PSZ)"",
 		MS_VERTICALFLIP, 0, 0, 0, 0,
 		HWND_DESKTOP, HWND_TOP, 0, nullptr, nullptr);
@@ -1572,10 +1577,22 @@ void Menu::Show(Point pt, Window &w) {
 		return;
 	HWND hwndParent = reinterpret_cast<HWND>(w.GetID());
 	const LONG h = OwnHeightOf(hwndParent);
+	// KNOWN NOT WORKING: the menu does not appear. Everything measurable about this
+	// call succeeds - the menu window exists, MM_QUERYITEMCOUNT reports the 9 items
+	// ScintillaBase::ContextMenu inserted, WinPopupMenu returns TRUE and
+	// WinGetLastError is 0 - and nothing is drawn. Ruled out by measurement, so do
+	// not re-test these: the immediate Destroy() that used to follow this call (a
+	// real bug, fixed); an HWND_OBJECT parent, with and without re-parenting onto
+	// hwndParent before the call; WinCreateMenu(NULL template) vs WinCreateWindow;
+	// the position (a hardcoded point well inside the control behaves identically);
+	// and the key-up events arriving right after the accelerator. The next step is a
+	// standalone PM program that pops up a menu with no Scintilla in the picture.
 	WinPopupMenu(hwndParent, hwndParent, reinterpret_cast<HWND>(mid),
 		static_cast<LONG>(pt.x), h - static_cast<LONG>(pt.y), 0,
 		PU_HCONSTRAIN | PU_VCONSTRAIN | PU_MOUSEBUTTON1 | PU_KEYBOARD);
-	Destroy();
+	// NOT destroyed here: WinPopupMenu returns as soon as the menu is displayed, so
+	// tearing it down immediately removes it before the user can pick anything.
+	
 }
 
 // ---------------------------------------------------------------------------

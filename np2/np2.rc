@@ -602,6 +602,11 @@ BEGIN
     VK_F3, IDM_FINDPREV, VIRTUALKEY, SHIFT
     VK_F5, IDM_CHANGENOTIFY, VIRTUALKEY, ALT
 
+    /* PM reserves F10 for the action bar and never delivers it to the focus
+       window, so the editor cannot catch Shift+F10 itself - it has to be an
+       accelerator on the frame. */
+    VK_F10, IDM_CONTEXTMENU, VIRTUALKEY, SHIFT
+
     /* The traditional OS/2 CUA editing keys. IBM documents these for entry fields and
        MLEs [DOC-IBM - pmv2base.txt]: Ctrl+Insert copies, Shift+Insert pastes,
        Shift+Delete cuts. Form follows IBM's own accelerator example
