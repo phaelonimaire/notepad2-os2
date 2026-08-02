@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 185 (~76%) |
+| Menu commands | 245 | 186 (~76%) |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 195, but this counts separators
+grep -c '^ *MENUITEM' np2/np2.rc              # 196, but this counts separators
 grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-195 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **185**.
+196 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **186**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -196,8 +196,14 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
      of the per-style model this port deliberately did not follow.
    - **Probably not applicable**: Transparent mode — PM on Warp 4.5x has no per-window alpha.
      Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it.
-   - **Needs design, not just work**: Reuse window / Single file instance (one-instance IPC),
-     Customize toolbar, Command line help.
+   - ~~**Reuse window**~~ — **done**, commit `c28f431`. PM has no `FindWindow` and no
+     `WM_COPYDATA`; the filename travels through the **system atom table**, which any process can
+     read. Written up in the toolkit as `os2ref/clipboard-dde.md` §9. *Single file instance* (one
+     window per document, rather than one window total) is the same machinery with a path compare
+     added, and is now a small job rather than a design one.
+   - **Still needs design, not just work**: Customize toolbar (the toolbar is a composed row of
+     `WC_BUTTON`s, so "customize" needs a model for what is configurable before a dialog can edit
+     it), and Command line help.
    - **Not applicable**: Minimize to tray — WarpCenter has no tray. See "Not applicable" below.
 
 ### Command-surface notes
