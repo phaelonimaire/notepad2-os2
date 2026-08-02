@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 184 (~75%) |
+| Menu commands | 245 | 185 (~76%) |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 194, but this counts separators
+grep -c '^ *MENUITEM' np2/np2.rc              # 195, but this counts separators
 grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-194 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **184**.
+195 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **185**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -189,7 +189,11 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
      over a six-item menu — Notepad2 needs one because it offers every installed code page; revisit
      if this port ever does. Fixing Reload As found a decoder bug: the byte-order mark was skipped
      unconditionally, so every BOM-less UTF-16 file lost its first character.
-   - **View**: 2nd default scheme, Text excerpt.
+   - ~~**View**: Text excerpt~~ — **done**, commit `7a75c8f`. Still open: **2nd default scheme**,
+     which needs a design decision rather than typing — Notepad2 keeps two default style sets and
+     toggles between them, whereas this port compiles schemes in and shares one semantic palette
+     (`np2style.c`). Decide whether the palette gains a second saved copy, or drop it as an artefact
+     of the per-style model this port deliberately did not follow.
    - **Probably not applicable**: Transparent mode — PM on Warp 4.5x has no per-window alpha.
      Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it.
    - **Needs design, not just work**: Reuse window / Single file instance (one-instance IPC),
