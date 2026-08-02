@@ -204,8 +204,17 @@ Every one of these cost real time at least once, and none is catchable by the co
 
 ### Known gaps in the platform layer
 
-- `CreateCallTipWindow` and `AddToPopUp` are no-ops (call tips absent, context menu empty) — both
-  visible absences rather than silent corruption, by design.
+- `CreateCallTipWindow` is a no-op (call tips absent) — a visible absence rather than silent
+  corruption, by design.
+- **The context menu builds but does not draw** (commit `2b4a2ed`). `AddToPopUp` is implemented and
+  measured correct — `MM_QUERYITEMCOUNT` reports the 9 items `ScintillaBase::ContextMenu` inserts —
+  `WinPopupMenu` returns TRUE with `WinGetLastError` 0, and nothing appears. `WM_BUTTON2DOWN`, the
+  `WM_COMMAND` routing and the Shift+F10 accelerator are all wired and the accelerator is verified
+  to fire. Ruled out by measurement, so do not re-test: the immediate `Destroy()` after
+  `WinPopupMenu` (a real bug, fixed); an `HWND_OBJECT` parent with and without re-parenting;
+  `WinCreateMenu` vs `WinCreateWindow`; the popup position; and the key-up events arriving straight
+  after the accelerator. **Next step: a standalone PM program that pops up a menu with no Scintilla
+  in it**, to find out whether the fault is in this usage of `WinPopupMenu` at all.
 - `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`).
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
@@ -265,6 +274,21 @@ read as working:
 
 A status file that says "done" for something nobody has watched work is the same failure as calling
 unwritten work "blocked" — it stops the next person from checking.
+
+#### The mouse harness stopped responding mid-session
+
+Worth knowing before trusting it: after a stretch of working clicks, the guest pointer froze and
+stopped tracking `xdotool` entirely — absolute and relative motion both. The host pointer was
+provably moving (`xdotool getmouselocation` confirmed it reached the intended screen position) and
+the guest simply did not follow, so it is below the application. Re-focusing the VM window did not
+recover it; a power-cycle is the next thing to try. Keyboard injection through `VBoxManage` kept
+working throughout, which is the argument for the toolkit recipe's advice to prefer keyboard-
+reachable paths for anything you need to be able to re-test.
+
+Also: **`np2` instances accumulate.** Several launches over SSH left more than one running, and the
+extra one holds `np2.exe` locked so `wrc` cannot bind resources — while Alt+F4 appears not to work,
+because it closes the window you can see and not the other one. `ps | grep np2` and kill by pid
+before rebuilding.
 
 #### Now verified, and what it cost to find out
 
