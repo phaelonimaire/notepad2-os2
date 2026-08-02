@@ -22,6 +22,10 @@ BOOL RunProgram(HWND hwndOwner, const char *pszPgm, const char *pszArgs, BOOL bP
 /* Hand a file to the Workplace Shell to open however it is associated. */
 BOOL RunOpenDocument(HWND hwndOwner, const char *pszFile);
 
+/* Open the file's Workplace Shell settings notebook - the OS/2 equivalent of
+ * Win32's shell property sheet. */
+BOOL RunObjectSettings(HWND hwndOwner, const char *pszFile);
+
 /* Notepad2's Run dialog: a command line, executed via RunProgram. */
 BOOL RunCommandDlg(HWND hwndOwner, char *pszCmd, int cchCmd);
 

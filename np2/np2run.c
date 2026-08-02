@@ -36,6 +36,14 @@
 #ifndef OPEN_DEFAULT
 #define OPEN_DEFAULT  0
 #endif
+/* OPEN_SETTINGS is 2 - MEASURED, not guessed: wpobject.h is not on this system,
+ * so a probe called WinOpenObject with successive view numbers and the one that
+ * raised the "<file> - Properties" settings notebook was 2. IBM documents the
+ * name and meaning ("Open Settings notebook") in wps2.txt under wpOpen, but not
+ * the value. */
+#ifndef OPEN_SETTINGS
+#define OPEN_SETTINGS 2
+#endif
 
 BOOL RunProgram(HWND hwndOwner, const char *pszPgm, const char *pszArgs, BOOL bPM)
 {
@@ -89,6 +97,21 @@ BOOL RunProgram(HWND hwndOwner, const char *pszPgm, const char *pszArgs, BOOL bP
  * accepts a file-system path as an object id and returns its HOBJECT, and
  * WinOpenObject then opens it in its default view - exactly what double
  * clicking it on the desktop does [os2ref/wps-classes.md]. */
+/* The Workplace Shell's settings notebook is OS/2's answer to a Win32 shell
+ * property sheet: same information, same role, reached the same way - by asking
+ * the shell for the object and telling it which view to open. */
+BOOL RunObjectSettings(HWND hwndOwner, const char *pszFile)
+{
+    HOBJECT hobj;
+    if (!pszFile || !pszFile[0])
+        return FALSE;
+    hobj = WinQueryObject((PCSZ)pszFile);
+    if (hobj == NULLHANDLE)
+        return FALSE;
+    (void)hwndOwner;
+    return WinOpenObject(hobj, OPEN_SETTINGS, TRUE);
+}
+
 BOOL RunOpenDocument(HWND hwndOwner, const char *pszFile)
 {
     HOBJECT hobj;

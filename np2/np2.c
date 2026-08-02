@@ -1537,6 +1537,19 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_PROPERTIES:
+            /* Win32 opens a shell property sheet; the Workplace Shell's settings
+             * notebook is the same thing on OS/2. Needs the file to exist as an
+             * object, so an unsaved document has nothing to show. */
+            if (!szFileName[0]) {
+                WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Save the document first.",
+                              (PSZ)"Properties", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+            } else if (!RunObjectSettings(hwnd, szFileName)) {
+                sprintf(szStatus, "the Workplace Shell has no object for %s", szFileName);
+                ShowStatus();
+            }
+            break;
+
         case IDM_SAVECOPY: {
             CHAR szPick[CCHMAXPATH];
             if (PickFile(hwnd, TRUE, (PSZ)szPick))

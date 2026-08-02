@@ -10,6 +10,8 @@ BEGIN
         MENUITEM "~Save\tCtrl+S",    IDM_SAVE
         MENUITEM "Save ~as...",      IDM_SAVEAS
         MENUITEM "Save Cop~y...",    IDM_SAVECOPY
+        /* No mnemonic: the File scope has only j/q/z free. */
+        MENUITEM "Properties...",    IDM_PROPERTIES
         MENUITEM "Re~vert",          IDM_REVERT
         MENUITEM "Recent F~iles...", IDM_RECENT
         MENUITEM "Bro~wse...",       IDM_BROWSE
