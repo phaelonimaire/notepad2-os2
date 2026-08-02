@@ -337,6 +337,7 @@
 #define IDM_COLUMNWRAP      452
 #define IDM_SAVEBEFORERUN   453
 #define IDM_CMDLINEHELP     454
+#define IDM_USE2NDSCHEME    455
 
 /* A second instance hands its filename to the first through the system atom
  * table; mp1 carries the ATOM. See np2run.c. */

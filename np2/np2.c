@@ -634,6 +634,7 @@ static void LoadSettings(void)
     bStickyWindowPos    = IniGetInt(SEC_VIEW, "StickyWindowPosition", bStickyWindowPos);
     bAutoCompleteWords  = IniGetInt(SEC_VIEW, "AutoCompleteWords", bAutoCompleteWords);
     bReuseWindow        = IniGetInt(SEC_VIEW, "ReuseWindow", bReuseWindow);
+    Style_UseAlternatePalette(IniGetInt(SEC_VIEW, "Use2ndDefaultScheme", 0) ? TRUE : FALSE);
     bSingleFileInstance = IniGetInt(SEC_VIEW, "SingleFileInstance", bSingleFileInstance);
     bSaveBeforeRunning  = IniGetInt(SEC_VIEW, "SaveBeforeRunningTools", bSaveBeforeRunning);
 
@@ -653,10 +654,14 @@ static void LoadSettings(void)
             CHAR szKey[64], szVal[80];
             unsigned long clr = 0;
             int bold = 0;
-            sprintf(szKey, "Slot%d", i);
-            IniGetStr("Colours", szKey, "", szVal, sizeof(szVal));
-            if (szVal[0] && sscanf(szVal, "%lX,%d", &clr, &bold) == 2)
-                Style_SetSlot(i, (LONG)clr, (BOOL)bold);
+            int iSet;
+            for (iSet = 0; iSet < Style_PaletteCount(); iSet++) {
+                clr = 0; bold = 0;
+                sprintf(szKey, iSet ? "Alt%d" : "Slot%d", i);
+                IniGetStr("Colours", szKey, "", szVal, sizeof(szVal));
+                if (szVal[0] && sscanf(szVal, "%lX,%d", &clr, &bold) == 2)
+                    Style_SetSlotIn(iSet, i, (LONG)clr, (BOOL)bold);
+            }
         }
     }
 
@@ -748,6 +753,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("StickyWindowPosition",      bStickyWindowPos);
     IniWriteInt("AutoCompleteWords",         bAutoCompleteWords);
     IniWriteInt("ReuseWindow",               bReuseWindow);
+    IniWriteInt("Use2ndDefaultScheme",       Style_UsingAlternatePalette());
     IniWriteInt("SingleFileInstance",        bSingleFileInstance);
     IniWriteInt("SaveBeforeRunningTools",    bSaveBeforeRunning);
 
@@ -772,10 +778,14 @@ static void SaveSettings(HWND hwndFrame)
         int i;
         for (i = 0; i < Style_SlotCount(); i++) {
             CHAR szKey[64], szVal[64];
-            sprintf(szKey, "Slot%d", i);
-            sprintf(szVal, "%06lX,%d,%s", (unsigned long)Style_SlotColour(i),
-                    Style_SlotBold(i) ? 1 : 0, Style_SlotName(i));
-            IniWriteStr(szKey, szVal);
+            int iSet;
+            for (iSet = 0; iSet < Style_PaletteCount(); iSet++) {
+                sprintf(szKey, iSet ? "Alt%d" : "Slot%d", i);
+                sprintf(szVal, "%06lX,%d,%s",
+                        (unsigned long)Style_SlotColourIn(iSet, i),
+                        Style_SlotBoldIn(iSet, i) ? 1 : 0, Style_SlotName(i));
+                IniWriteStr(szKey, szVal);
+            }
         }
     }
 
@@ -931,6 +941,11 @@ static void SyncMenu(HWND hwndFrame)
                MPFROM2SHORT(MIA_CHECKED, bLineNumbers ? MIA_CHECKED : 0));
     /* Not a BOOL toggle - three modes, checked whenever watching is on, which
      * is how Notepad2 shows it (CheckCmd with iFileWatchingMode). */
+    /* Not a BOOL variable - the flag lives in np2style.c, so it is read here. */
+    WinSendMsg(hwndMenu, MM_SETITEMATTR,
+               MPFROM2SHORT(IDM_USE2NDSCHEME, TRUE),
+               MPFROM2SHORT(MIA_CHECKED,
+                            Style_UsingAlternatePalette() ? MIA_CHECKED : 0));
     WinSendMsg(hwndMenu, MM_SETITEMATTR,
                MPFROM2SHORT(IDM_CHANGENOTIFY, TRUE),
                MPFROM2SHORT(MIA_CHECKED,
@@ -1591,6 +1606,14 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 "Single File Instance - raises the instance already holding "
                 "that file.",
                 (PSZ)"Command Line Help", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+            break;
+
+        case IDM_USE2NDSCHEME:
+            /* Switching is lossless - both palettes keep their contents - so
+             * this is a view of the same document, not an edit to it. */
+            Style_UseAlternatePalette(Style_UsingAlternatePalette() ? FALSE : TRUE);
+            ApplyScheme(hwndFrame);
+            WinInvalidateRect(hwndSci, NULL, TRUE);
             break;
 
         case IDM_COLUMNWRAP: {

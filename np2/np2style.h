@@ -43,6 +43,15 @@ LONG        Style_SlotColour(int iSlot);
 BOOL        Style_SlotBold(int iSlot);
 void        Style_SetSlot(int iSlot, LONG clr, BOOL bBold);
 
+/* Notepad2's "2nd default scheme": a second saved palette, switched wholesale.
+ * Switching is lossless - neither set's contents change. */
+void        Style_UseAlternatePalette(BOOL bAlt);
+BOOL        Style_UsingAlternatePalette(void);
+int         Style_PaletteCount(void);
+LONG        Style_SlotColourIn(int iSet, int iSlot);
+BOOL        Style_SlotBoldIn(int iSet, int iSlot);
+void        Style_SetSlotIn(int iSet, int iSlot, LONG clr, BOOL bBold);
+
 /* The named colours offered in place of a colour picker - OS/2 has no
  * standard colour-selection dialog [os2ref/resources-and-dialogs.md 10]. */
 int         Style_ColourCount(void);

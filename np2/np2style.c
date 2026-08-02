@@ -63,8 +63,19 @@ enum {
     SEM_COUNT
 };
 
+/* Two palettes, not one - Notepad2's "2nd default scheme".
+ *
+ * This port shares ONE semantic palette across every language scheme, which is
+ * where it departs from Notepad2's per-style editing (see np2style.h). The
+ * natural reading of a "2nd default" in that model is a second saved palette
+ * you can switch to, so aSemSet holds both and iSemActive selects one. Editing
+ * a slot edits whichever is active; np2.c persists both.
+ */
+#define SEM_SETS 2
+static int iSemActive = 0;
+
 /* Mutable: the scheme editor writes here and np2.c persists it. */
-static struct { LONG clr; BOOL bBold; } aSem[SEM_COUNT] = {
+static struct { LONG clr; BOOL bBold; } aSemSet[SEM_SETS][SEM_COUNT] = {{
     { NP2C_BLACK,  FALSE },   /* DEFAULT   */
     { NP2C_GREEN,  FALSE },   /* COMMENT   */
     { NP2C_BLUE,   TRUE  },   /* KEYWORD   */
@@ -76,7 +87,19 @@ static struct { LONG clr; BOOL bBold; } aSem[SEM_COUNT] = {
     { NP2C_NAVY,   TRUE  },   /* TAG       */
     { NP2C_DKRED,  FALSE },   /* ATTRIB    */
     { NP2C_OLIVE,  TRUE  }    /* HEADING   */
-};
+}, {
+    { NP2C_BLACK,  FALSE },   /* DEFAULT   */
+    { NP2C_GREEN,  FALSE },   /* COMMENT   */
+    { NP2C_BLUE,   TRUE  },   /* KEYWORD   */
+    { NP2C_TEAL,   TRUE  },   /* KEYWORD2  */
+    { NP2C_MAROON, FALSE },   /* STRING    */
+    { NP2C_PURPLE, FALSE },   /* NUMBER    */
+    { NP2C_TEAL,   FALSE },   /* PREPROC   */
+    { NP2C_GRAY,   FALSE },   /* OPERATOR  */
+    { NP2C_NAVY,   TRUE  },   /* TAG       */
+    { NP2C_DKRED,  FALSE },   /* ATTRIB    */
+    { NP2C_OLIVE,  TRUE  }    /* HEADING   */
+}};
 
 typedef struct { short style; short sem; } STYLEMAP;
 #define MAPEND { -1, -1 }
@@ -379,14 +402,49 @@ static const struct { const char *pszName; LONG clr; } aNamedColours[] = {
 
 int         Style_SlotCount(void)          { return SEM_COUNT; }
 const char *Style_SlotName(int i)          { return (i >= 0 && i < SEM_COUNT) ? aSemNames[i] : ""; }
-LONG        Style_SlotColour(int i)        { return (i >= 0 && i < SEM_COUNT) ? aSem[i].clr : 0; }
-BOOL        Style_SlotBold(int i)          { return (i >= 0 && i < SEM_COUNT) ? aSem[i].bBold : FALSE; }
+LONG        Style_SlotColour(int i)        { return (i >= 0 && i < SEM_COUNT) ? aSemSet[iSemActive][i].clr : 0; }
+BOOL        Style_SlotBold(int i)          { return (i >= 0 && i < SEM_COUNT) ? aSemSet[iSemActive][i].bBold : FALSE; }
+
+/* Which palette the slot accessors read and write. Switching does not touch
+ * either set's contents, so flipping back and forth is lossless. */
+void Style_UseAlternatePalette(BOOL bAlt)
+{
+    iSemActive = bAlt ? 1 : 0;
+}
+
+BOOL Style_UsingAlternatePalette(void)
+{
+    return (BOOL)(iSemActive != 0);
+}
+
+/* Persistence needs to reach the INACTIVE set too, so these take the set. */
+LONG Style_SlotColourIn(int iSet, int i)
+{
+    return (iSet >= 0 && iSet < SEM_SETS && i >= 0 && i < SEM_COUNT)
+           ? aSemSet[iSet][i].clr : 0;
+}
+
+BOOL Style_SlotBoldIn(int iSet, int i)
+{
+    return (iSet >= 0 && iSet < SEM_SETS && i >= 0 && i < SEM_COUNT)
+           ? aSemSet[iSet][i].bBold : FALSE;
+}
+
+void Style_SetSlotIn(int iSet, int i, LONG clr, BOOL bBold)
+{
+    if (iSet >= 0 && iSet < SEM_SETS && i >= 0 && i < SEM_COUNT) {
+        aSemSet[iSet][i].clr = clr;
+        aSemSet[iSet][i].bBold = bBold;
+    }
+}
+
+int Style_PaletteCount(void) { return SEM_SETS; }
 
 void Style_SetSlot(int i, LONG clr, BOOL bBold)
 {
     if (i >= 0 && i < SEM_COUNT) {
-        aSem[i].clr = clr;
-        aSem[i].bBold = bBold;
+        aSemSet[iSemActive][i].clr = clr;
+        aSemSet[iSemActive][i].bBold = bBold;
     }
 }
 
@@ -492,8 +550,8 @@ void Style_Apply(HWND hwndEdit, int iScheme, const char *pszFontFace, int iFontS
 
     for (pm = ps->pMap; pm->style >= 0; pm++) {
         SciMsg(hwndEdit, SCI_STYLESETFORE, pm->style,
-               (const void *)aSem[pm->sem].clr);
-        if (aSem[pm->sem].bBold)
+               (const void *)aSemSet[iSemActive][pm->sem].clr);
+        if (aSemSet[iSemActive][pm->sem].bBold)
             SciMsg(hwndEdit, SCI_STYLESETBOLD, pm->style, (const void *)1L);
     }
 

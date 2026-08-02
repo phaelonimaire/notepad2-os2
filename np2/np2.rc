@@ -195,6 +195,7 @@ BEGIN
         END
         MENUITEM "Default ~Font...",       IDM_VIEW_FONT
         MENUITEM "Customi~ze Colours...",  IDM_SCHEMECONFIG
+        MENUITEM "Use 2n~d Default Scheme", IDM_USE2NDSCHEME
         MENUITEM SEPARATOR
         MENUITEM "~Word Wrap",             IDM_WORDWRAP
         MENUITEM "Column Wra~p...",        IDM_COLUMNWRAP
