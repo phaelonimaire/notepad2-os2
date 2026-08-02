@@ -224,6 +224,75 @@ static MRESULT EXPENTRY ColumnWrapDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPAR
     return WinDefDlgProc(hwnd, msg, mp1, mp2);
 }
 
+/*--------------------------------------------------------------------------
+ * Customize toolbar - which buttons are shown.
+ *
+ * PM has no toolbar control class, so the bar is a row of WC_BUTTONs and there
+ * is no built-in customize dialog to inherit. This is the minimal honest
+ * meaning of "customize" for that: pick which of the fixed buttons appear. A
+ * multiple-selection list box carries the state directly - selected is shown.
+ *------------------------------------------------------------------------*/
+
+static const char *const *ppszTbLabels;
+static int   cTbLabels;
+static ULONG flTbMask;
+
+static MRESULT EXPENTRY TbCustomDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    int i;
+    switch (msg) {
+    case WM_INITDLG:
+        for (i = 0; i < cTbLabels; i++) {
+            WinSendDlgItemMsg(hwnd, IDC_TBLIST, LM_INSERTITEM,
+                MPFROMSHORT(LIT_END), MPFROMP((PVOID)ppszTbLabels[i]));
+            if (flTbMask & (1UL << i))
+                WinSendDlgItemMsg(hwnd, IDC_TBLIST, LM_SELECTITEM,
+                    MPFROMSHORT((SHORT)i), MPFROMSHORT(TRUE));
+        }
+        return (MRESULT)FALSE;
+
+    case WM_COMMAND:
+        switch (SHORT1FROMMP(mp1)) {
+        case DID_OK:
+            /* A multiple-selection list box is walked with LM_QUERYSELECTION:
+             * pass LIT_FIRST, then feed each answer back to get the next, until
+             * it returns LIT_NONE. */
+            flTbMask = 0;
+            {
+                SHORT sel = LIT_FIRST;
+                for (;;) {
+                    sel = SHORT1FROMMR(WinSendDlgItemMsg(hwnd, IDC_TBLIST,
+                              LM_QUERYSELECTION, MPFROMSHORT(sel), 0));
+                    if (sel == LIT_NONE || sel < 0 || sel >= cTbLabels)
+                        break;
+                    flTbMask |= (1UL << sel);
+                }
+            }
+            WinDismissDlg(hwnd, DID_OK);
+            return (MRESULT)0;
+        case DID_CANCEL:
+            WinDismissDlg(hwnd, DID_CANCEL);
+            return (MRESULT)0;
+        }
+        break;
+    }
+    return WinDefDlgProc(hwnd, msg, mp1, mp2);
+}
+
+BOOL EditToolbarCustomizeDlg(HWND hwndOwner, const char *const *ppszLabels,
+                             int cLabels, ULONG *pflMask)
+{
+    ppszTbLabels = ppszLabels;
+    cTbLabels    = cLabels;
+    flTbMask     = pflMask ? *pflMask : 0;
+    if (WinDlgBox(HWND_DESKTOP, hwndOwner, TbCustomDlgProc, NULLHANDLE,
+                  IDD_TBCUSTOM, NULL) != DID_OK)
+        return FALSE;
+    if (pflMask)
+        *pflMask = flTbMask;
+    return TRUE;
+}
+
 BOOL EditColumnWrapDlg(HWND hwndOwner, int *piCol)
 {
     if (piCol && *piCol > 0)

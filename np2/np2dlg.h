@@ -42,6 +42,8 @@ void ApplySettings(HWND hwndEdit, const NP2SETTINGS *s);
 
 BOOL EditGotoLineDlg(HWND hwndOwner, HWND hwndEdit);
 BOOL EditColumnWrapDlg(HWND hwndOwner, int *piCol);
+BOOL EditToolbarCustomizeDlg(HWND hwndOwner, const char *const *ppszLabels,
+                             int cLabels, ULONG *pflMask);
 BOOL EditTabSettingsDlg(HWND hwndOwner, NP2SETTINGS *s);
 BOOL EditLongLinesDlg(HWND hwndOwner, NP2SETTINGS *s);
 BOOL EditWordWrapDlg(HWND hwndOwner, NP2SETTINGS *s);

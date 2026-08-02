@@ -216,6 +216,7 @@ BEGIN
         END
         MENUITEM SEPARATOR
         MENUITEM "Show Toolb~ar",          IDM_TOOLBAR
+        MENUITEM "Customize Toolbar...",   IDM_CUSTOMIZETB
         MENUITEM "Show Status~bar",        IDM_STATUSBAR
         MENUITEM "Line ~Numbers",          IDM_LINENUMBERS
         MENUITEM "Selection ~Margin",      IDM_SELMARGIN
@@ -342,6 +343,18 @@ BEGIN
         PUSHBUTTON    "Replace ~All",  IDC_REPLACEALL,   238,  89, 64, 14
         PUSHBUTTON    "In ~Selection", IDC_REPLACEINSEL, 238,  71, 64, 14
         PUSHBUTTON    "Close",         DID_CANCEL,       238,  53, 64, 14
+    END
+END
+
+DLGTEMPLATE IDD_TBCUSTOM
+BEGIN
+    DIALOG "Customize Toolbar", IDD_TBCUSTOM, 20, 20, 220, 160, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Buttons to show (select the ones you want):", -1, 8, 142, 200, 8
+        CONTROL "", IDC_TBLIST, 8, 32, 130, 104, WC_LISTBOX,
+                LS_MULTIPLESEL | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+        DEFPUSHBUTTON "OK",     DID_OK,     150, 116, 60, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL, 150,  96, 60, 14
     END
 END
 

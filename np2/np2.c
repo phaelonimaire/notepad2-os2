@@ -149,6 +149,9 @@ static const struct { USHORT id; const char *pszText; } aToolButtons[] = {
     { 0, NULL }
 };
 #define NTOOLBUTTONS 12
+/* Which toolbar buttons are shown - one bit per entry in aToolButtons. PM has
+ * no toolbar class, so "customize" means this and nothing more. */
+static ULONG flToolMask = 0xFFFUL;      /* all 12 */
 static HWND ahwndTool[NTOOLBUTTONS];
 static HWND hwndStatus[4] = { NULLHANDLE, NULLHANDLE, NULLHANDLE, NULLHANDLE };
 static LONG cyStatus = 20;
@@ -635,6 +638,7 @@ static void LoadSettings(void)
     bAutoCompleteWords  = IniGetInt(SEC_VIEW, "AutoCompleteWords", bAutoCompleteWords);
     bReuseWindow        = IniGetInt(SEC_VIEW, "ReuseWindow", bReuseWindow);
     Style_UseAlternatePalette(IniGetInt(SEC_VIEW, "Use2ndDefaultScheme", 0) ? TRUE : FALSE);
+    flToolMask          = (ULONG)IniGetInt(SEC_VIEW, "ToolbarButtons", (int)flToolMask);
     bSingleFileInstance = IniGetInt(SEC_VIEW, "SingleFileInstance", bSingleFileInstance);
     bSaveBeforeRunning  = IniGetInt(SEC_VIEW, "SaveBeforeRunningTools", bSaveBeforeRunning);
 
@@ -754,6 +758,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("AutoCompleteWords",         bAutoCompleteWords);
     IniWriteInt("ReuseWindow",               bReuseWindow);
     IniWriteInt("Use2ndDefaultScheme",       Style_UsingAlternatePalette());
+    IniWriteInt("ToolbarButtons",            (int)flToolMask);
     IniWriteInt("SingleFileInstance",        bSingleFileInstance);
     IniWriteInt("SaveBeforeRunningTools",    bSaveBeforeRunning);
 
@@ -1142,16 +1147,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
         /* The toolbar goes at the TOP, which in bottom-left coordinates is
          * the LARGEST y - the opposite of a Win32 layout's arithmetic. */
-        for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++) {
-            if (ahwndTool[i] == NULLHANDLE)
-                continue;
-            if (!bToolbar) {
-                WinShowWindow(ahwndTool[i], FALSE);
-                continue;
+        {
+            int iSlot = 0;      /* position, which skips hidden buttons */
+            for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++) {
+                if (ahwndTool[i] == NULLHANDLE)
+                    continue;
+                if (!bToolbar || !(flToolMask & (1UL << i))) {
+                    WinShowWindow(ahwndTool[i], FALSE);
+                    continue;
+                }
+                WinSetWindowPos(ahwndTool[i], HWND_TOP,
+                                4 + iSlot * 48, cy - cyTool + 2, 46, cyTool - 4,
+                                SWP_SIZE | SWP_MOVE | SWP_SHOW);
+                iSlot++;
             }
-            WinSetWindowPos(ahwndTool[i], HWND_TOP,
-                            4 + i * 48, cy - cyTool + 2, 46, cyTool - 4,
-                            SWP_SIZE | SWP_MOVE | SWP_SHOW);
         }
         for (i = 0; i < 4; i++) {
             if (hwndStatus[i] == NULLHANDLE)
@@ -1607,6 +1616,21 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 "that file.",
                 (PSZ)"Command Line Help", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
             break;
+
+        case IDM_CUSTOMIZETB: {
+            const char *apsz[NTOOLBUTTONS];
+            int i, n = 0;
+            for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++)
+                apsz[n++] = aToolButtons[i].pszText;
+            if (EditToolbarCustomizeDlg(hwnd, apsz, n, &flToolMask)) {
+                RECTL rcl;
+                WinQueryWindowRect(hwnd, &rcl);
+                WinSendMsg(hwnd, WM_SIZE, 0,
+                           MPFROM2SHORT((SHORT)(rcl.xRight - rcl.xLeft),
+                                        (SHORT)(rcl.yTop - rcl.yBottom)));
+            }
+            break;
+        }
 
         case IDM_USE2NDSCHEME:
             /* Switching is lossless - both palettes keep their contents - so
