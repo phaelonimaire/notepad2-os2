@@ -204,12 +204,14 @@ Every one of these cost real time at least once, and none is catchable by the co
 
 ### Known gaps in the platform layer
 
-- `CreateCallTipWindow` is a no-op (call tips absent) — a visible absence rather than silent
-  corruption, by design.
+- ~~`CreateCallTipWindow`~~ **Done** — commit `ec6ebf2`. A desktop-child window owned by the editor,
+  painting through the same `Surface`. Verified on screen including the highlight range and a clean
+  repaint on dismissal.
 - ~~The context menu~~ **Done** — commit `7c74970`. `AddToPopUp` builds it with `MM_INSERTITEM`,
   `WM_BUTTON2DOWN` and Shift+F10 both raise it, and choosing an item dispatches. Verified on screen
   including the per-item enabled states.
-- `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`).
+- `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`) — the last
+  stub in the platform layer. Autocomplete lists show text without per-item icons.
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
 - Sort and alignment compare bytes, not characters; rectangular selection is refused rather than
