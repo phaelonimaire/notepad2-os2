@@ -87,12 +87,21 @@ for f in lexers/*.cxx; do
 g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/PlatPM.cxx     -o /tmp/platpm.o
 g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
 
-# the app
+# the app.  Keep this source list complete - a file left off links cleanly right
+# up until something calls into it.
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
-    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
-wrc np2.res np2.exe
+    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c \
+    np2enc.c np2browse.c np2print.c \
+    np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
+wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 ```
+
+> **`wrc np2.res np2.exe` fails with `Permission denied` while the app is still running** on the
+> guest — OS/2 locks a running executable, and the error names a temporary file
+> (`Error! E007: Error renaming temporary file "__RCTMP89__.tmp"`) rather than saying so. Close the
+> app first. Because the link step *before* it succeeded, the on-disk `.exe` is left stale rather
+> than missing, so the next test silently runs the old build.
 
 > **`np2.def` is not optional either.** Without `NAME np2 WINDOWAPI` the executable is not marked
 > as a PM application, and it then runs from some sessions and exits instantly and silently from
@@ -194,8 +203,6 @@ Every one of these cost real time at least once, and none is catchable by the co
 - `CreateCallTipWindow` and `AddToPopUp` are no-ops (call tips absent, context menu empty) — both
   visible absences rather than silent corruption, by design.
 - `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`).
-- Inbound scroll-bar clicks (`WM_VSCROLL` → `ScrollTo`) are compiled and symmetric but never
-  exercised — no mouse injection available. Keyboard-driven scrolling is verified.
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
 - Sort and alignment compare bytes, not characters; rectangular selection is refused rather than
@@ -251,8 +258,27 @@ read as working:
 - **Printing.** The test VM has no printer driver installed and no `\spool` directory, so
   `SplEnumQueue` correctly reports zero queues and the code stops at its honest-failure message.
   The queue-discovery path and that message are verified; **`DevOpenDC` onwards has never run.**
-- **Inbound scroll-bar clicks** (`WM_VSCROLL` → `ScrollTo`) — compiled and symmetric, never
-  exercised, because the harness has no mouse injection. Keyboard scrolling is verified.
 
 A status file that says "done" for something nobody has watched work is the same failure as calling
 unwritten work "blocked" — it stops the next person from checking.
+
+#### Now verified, and what it cost to find out
+
+The harness *can* click. `VBoxManage` has no mouse command, but the VM's window can be driven with
+`xdotool` on a nested `Xvfb` — see the toolkit's `recipes/setup-test-vm.md`, which now carries the
+working rig. Three things that had been recorded here as unverifiable are verified on screen:
+
+- **Toolbar buttons.** Pressing *Find* raises the Find dialog, so the buttons really do reach the
+  same `WM_COMMAND` dispatch as the menu.
+- **Inbound scroll-bar clicks** (`WM_VSCROLL` → `ScrollTo`). Three clicks on the down arrow scroll
+  exactly three lines, and dragging the thumb to the top of the trough scrolls to line 1 — so the
+  arrow, `SB_SLIDERTRACK` and `SB_SLIDERPOSITION` paths all work.
+- **A dialog driven end to end by mouse**: click the entry field, type, click *Find Next*, and the
+  match is selected with the view scrolled to it.
+
+The first of those clicks immediately found a live regression — `IDD_FIND` and `IDD_REPLACE` had
+been dropped from the `.RC` and Find had been broken for several commits (fixed in `6cb4717`). That
+is the lesson worth keeping: **"the harness cannot test this" was true when it was written and
+stopped being true without anyone noticing.** A capability limit is a claim with a date on it, and
+this one was hiding a real bug behind it. `tools/rc-ids/check-rc-ids.py` in the toolkit now catches
+the specific regression at build time.
