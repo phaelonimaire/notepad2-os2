@@ -9,6 +9,7 @@ BEGIN
         MENUITEM "~Open...\tCtrl+O", IDM_OPEN
         MENUITEM "~Save\tCtrl+S",    IDM_SAVE
         MENUITEM "Save ~as...",      IDM_SAVEAS
+        MENUITEM "Save Cop~y...",    IDM_SAVECOPY
         MENUITEM "Re~vert",          IDM_REVERT
         MENUITEM "Recent F~iles...", IDM_RECENT
         MENUITEM "Bro~wse...",       IDM_BROWSE
@@ -228,6 +229,13 @@ BEGIN
         MENUITEM "~Tab Settings...",       IDM_TABSETTINGS
         MENUITEM "~Long Line Settings...", IDM_LONGLINESET
         MENUITEM "~Word Wrap Settings...", IDM_WORDWRAPSET
+        MENUITEM SEPARATOR
+        MENUITEM "~Auto-Complete Words as You Type", IDM_AUTOCOMPWORDS
+        MENUITEM SEPARATOR
+        MENUITEM "Save Settings on E~xit",   IDM_SAVESETTINGS
+        MENUITEM "~Remember Recent Files",   IDM_SAVERECENT
+        MENUITEM "Remem~ber Search Strings", IDM_SAVEFINDREPL
+        MENUITEM "Stic~ky Window Position",  IDM_STICKYWINPOS
         MENUITEM SEPARATOR
         SUBMENU "Window Title ~Display", IDM_TITLE_MENU
         BEGIN

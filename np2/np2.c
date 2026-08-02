@@ -23,6 +23,7 @@
 #define __USE_EMX
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "Scintilla.h"
 #include "np2.h"
@@ -105,6 +106,13 @@ static int  iTitleFormat = 2;
 static int  iEscFunction = 0;
 static BOOL bAlwaysOnTop  = FALSE;
 static BOOL bAutoCloseTags = TRUE;
+/* Notepad2's persistence and convenience switches. Stored inverted from its own
+ * "NoSave..." names so the flag reads the way the menu item does. */
+static BOOL bSaveSettingsOnExit = TRUE;
+static BOOL bSaveRecentFiles    = TRUE;
+static BOOL bSaveFindReplace    = TRUE;
+static BOOL bStickyWindowPos    = FALSE;
+static BOOL bAutoCompleteWords  = FALSE;
 
 /* An MRU entry must be fully qualified or it only reopens from the directory
  * it was first opened in - "demo.c" from a command line is a real example.
@@ -419,7 +427,10 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     return TRUE;
 }
 
-static BOOL SaveFile(HWND hwnd, PSZ pszFile)
+/* bAdopt FALSE writes the bytes and nothing else - that is "save a copy": the
+ * document keeps its own name, stays modified if it was, and the copy does not
+ * enter the recent-files list. */
+static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
 {
     HFILE  hf = NULLHANDLE;
     ULONG  ulAction = 0, cbWritten = 0;
@@ -477,10 +488,14 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile)
         return FALSE;
     }
 
-    Sci(SCI_SETSAVEPOINT, 0, 0);
-    SetFileName((const char *)pszFile);
-    MruAddQualified(szFileName);
-    sprintf(szStatus, "Saved %lu bytes to %s", (unsigned long)cbWritten, pszFile);
+    if (bAdopt) {
+        Sci(SCI_SETSAVEPOINT, 0, 0);
+        SetFileName((const char *)pszFile);
+        if (bSaveRecentFiles)
+            MruAddQualified(szFileName);
+    }
+    sprintf(szStatus, "%s %lu bytes to %s", bAdopt ? "Saved" : "Saved a copy of",
+            (unsigned long)cbWritten, pszFile);
     return TRUE;
 }
 
@@ -491,11 +506,11 @@ static BOOL DoSave(HWND hwnd, BOOL bForceSaveAs)
     CHAR szPick[CCHMAXPATH];
 
     if (!bForceSaveAs && szFileName[0])
-        return SaveFile(hwnd, (PSZ)szFileName);
+        return SaveFile(hwnd, (PSZ)szFileName, TRUE);
 
     if (!PickFile(hwnd, TRUE, (PSZ)szPick))
         return FALSE;
-    return SaveFile(hwnd, (PSZ)szPick);
+    return SaveFile(hwnd, (PSZ)szPick, TRUE);
 }
 
 /* Ask before discarding unsaved work. SCI_GETMODIFY tracks against the save
@@ -604,6 +619,11 @@ static void LoadSettings(void)
     iEscFunction        = IniGetInt(SEC_VIEW, "EscFunction", iEscFunction);
     bAlwaysOnTop        = IniGetInt(SEC_VIEW, "AlwaysOnTop", bAlwaysOnTop);
     bAutoCloseTags      = IniGetInt(SEC_VIEW, "AutoCloseTags", bAutoCloseTags);
+    bSaveSettingsOnExit = IniGetInt(SEC_VIEW, "SaveSettings", bSaveSettingsOnExit);
+    bSaveRecentFiles    = IniGetInt(SEC_VIEW, "SaveRecentFiles", bSaveRecentFiles);
+    bSaveFindReplace    = IniGetInt(SEC_VIEW, "SaveFindReplace", bSaveFindReplace);
+    bStickyWindowPos    = IniGetInt(SEC_VIEW, "StickyWindowPosition", bStickyWindowPos);
+    bAutoCompleteWords  = IniGetInt(SEC_VIEW, "AutoCompleteWords", bAutoCompleteWords);
 
     /* Notepad2's own key names and numbering, so an .ini is readable by both. */
     FileWatchSetOptions(IniGetInt(SEC_SET, "FileWatchingMode", FILEWATCH_NONE),
@@ -710,12 +730,19 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("EscFunction",               iEscFunction);
     IniWriteInt("AlwaysOnTop",               bAlwaysOnTop);
     IniWriteInt("AutoCloseTags",             bAutoCloseTags);
+    IniWriteInt("SaveSettings",              bSaveSettingsOnExit);
+    IniWriteInt("SaveRecentFiles",           bSaveRecentFiles);
+    IniWriteInt("SaveFindReplace",           bSaveFindReplace);
+    IniWriteInt("StickyWindowPosition",      bStickyWindowPos);
+    IniWriteInt("AutoCompleteWords",         bAutoCompleteWords);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
      * WinSetWindowPos's arguments - so it is assigned by NAME here, never
      * positionally [os2ref/pm-window-messaging.md]. */
-    if (hwndFrame != NULLHANDLE && WinQueryWindowPos(hwndFrame, &swp)) {
+    /* "Sticky window position" means the saved geometry is the one you chose, so
+     * moving the window must NOT overwrite it. */
+    if (!bStickyWindowPos && hwndFrame != NULLHANDLE && WinQueryWindowPos(hwndFrame, &swp)) {
         IniWriteSection(SEC_WIN);
         IniWriteInt("X",  swp.x);
         IniWriteInt("Y",  swp.y);
@@ -750,7 +777,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteSection("Recent");
     {
         int i;
-        for (i = 0; i < cMru; i++) {
+        for (i = 0; bSaveRecentFiles && i < cMru; i++) {
             CHAR szKey[32];
             sprintf(szKey, "File%d", i);
             IniWriteStr(szKey, aMru[i]);
@@ -758,8 +785,8 @@ static void SaveSettings(HWND hwndFrame)
     }
 
     IniWriteSection(SEC_FIND);
-    IniWriteStr("Find",                 efrData.szFind);
-    IniWriteStr("Replace",              efrData.szReplace);
+    IniWriteStr("Find",                 bSaveFindReplace ? efrData.szFind : "");
+    IniWriteStr("Replace",              bSaveFindReplace ? efrData.szReplace : "");
     IniWriteInt("Flags",                (int)efrData.fuFlags);
     IniWriteInt("TransformBackslashes", efrData.bTransformBS);
     IniWriteInt("NoWrap",               efrData.bNoFindWrap);
@@ -908,6 +935,11 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_TOOLBAR,        &bToolbar        },
             { IDM_ALWAYSONTOP,    &bAlwaysOnTop    },
             { IDM_AUTOCLOSETAGS,  &bAutoCloseTags  },
+            { IDM_SAVESETTINGS,   &bSaveSettingsOnExit },
+            { IDM_SAVERECENT,     &bSaveRecentFiles    },
+            { IDM_SAVEFINDREPL,   &bSaveFindReplace    },
+            { IDM_STICKYWINPOS,   &bStickyWindowPos    },
+            { IDM_AUTOCOMPWORDS,  &bAutoCompleteWords  },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
             { 0, NULL }
         };
@@ -1216,11 +1248,37 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
          * ->nmhdr.code is a segfault. It stays dormant while the guarding
          * feature is off, which is how this survived until Mark Occurrences
          * was first restored from the settings file as non-zero. */
-        if (SHORT1FROMMP(mp1) == 2000 && SHORT2FROMMP(mp1) == 0 && iMarkOccurrences) {
+        if (SHORT1FROMMP(mp1) == 2000 && SHORT2FROMMP(mp1) == 0) {
             SCNotification *pscn = (SCNotification *)PVOIDFROMMP(mp2);
-            if (pscn && pscn->nmhdr.code == SCN_UPDATEUI) {
-                EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
-                UpdateStatusbar();
+            if (pscn) {
+                switch (pscn->nmhdr.code) {
+                case SCN_UPDATEUI:
+                    if (iMarkOccurrences) {
+                        EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
+                        UpdateStatusbar();
+                    }
+                    break;
+
+                case SCN_CHARADDED:
+                    /* Auto-completion while typing: offer the list once the
+                     * partial word is long enough to narrow anything down.
+                     * Only word characters trigger it, so punctuation and
+                     * newlines simply end the word. */
+                    if (bAutoCompleteWords && !LONGFROMMR(Sci(SCI_AUTOCACTIVE, 0, 0))) {
+                        const int ch = pscn->ch;
+                        if (isalnum(ch) || ch == '_') {
+                            const LONG pos = LONGFROMMR(Sci(SCI_GETCURRENTPOS, 0, 0));
+                            const LONG ws  = LONGFROMMR(Sci(SCI_WORDSTARTPOSITION,
+                                                 MPFROMLONG(pos), MPFROMLONG(TRUE)));
+                            if (pos - ws >= 2)
+                                EditCompleteWord(hwndSci);
+                        }
+                    }
+                    break;
+
+                default:
+                    break;
+                }
             }
         }
         return (MRESULT)0;
@@ -1479,6 +1537,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_SAVECOPY: {
+            CHAR szPick[CCHMAXPATH];
+            if (PickFile(hwnd, TRUE, (PSZ)szPick))
+                SaveFile(hwnd, (PSZ)szPick, FALSE);
+            ShowStatus();
+            break;
+        }
+
+        case IDM_SAVESETTINGS:  bSaveSettingsOnExit = !bSaveSettingsOnExit; SyncMenu(hwndFrame); break;
+        case IDM_SAVERECENT:    bSaveRecentFiles    = !bSaveRecentFiles;    SyncMenu(hwndFrame); break;
+        case IDM_SAVEFINDREPL:  bSaveFindReplace    = !bSaveFindReplace;    SyncMenu(hwndFrame); break;
+        case IDM_STICKYWINPOS:  bStickyWindowPos    = !bStickyWindowPos;    SyncMenu(hwndFrame); break;
+        case IDM_AUTOCOMPWORDS: bAutoCompleteWords  = !bAutoCompleteWords;  SyncMenu(hwndFrame); break;
+
         case IDM_SELTONEXT:
         case IDM_SELTOPREV:
         case IDM_REPLACENEXT:
@@ -1687,7 +1759,8 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         case IDM_SAVESETTINGSNOW:
-            SaveSettings(hwndFrame);
+            if (bSaveSettingsOnExit)
+        SaveSettings(hwndFrame);
             sprintf(szStatus, "settings saved to %s", szIniPath);
             ShowStatus();
             break;
@@ -1943,7 +2016,8 @@ int main(int argc, char *argv[])
         WinDispatchMsg(hab, &qmsg);
 
     /* Save before the frame is destroyed - WinQueryWindowPos needs it alive. */
-    SaveSettings(hwndFrame);
+    if (bSaveSettingsOnExit)
+        SaveSettings(hwndFrame);
 
     if (EditFindReplaceHwnd() != NULLHANDLE)
         WinDestroyWindow(EditFindReplaceHwnd());

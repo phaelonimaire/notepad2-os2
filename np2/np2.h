@@ -317,6 +317,12 @@
 #define IDM_SAVEFIND        439
 #define IDM_SWAPCLIP        440
 #define IDM_COMPLETEWORD    441
+#define IDM_SAVECOPY        442
+#define IDM_SAVESETTINGS    443
+#define IDM_SAVERECENT      444
+#define IDM_SAVEFINDREPL    445
+#define IDM_STICKYWINPOS    446
+#define IDM_AUTOCOMPWORDS   447
 #define IDD_CHANGENOTIFY    565
 #define IDC_WATCH_NONE      840
 #define IDC_WATCH_MSGBOX    841
