@@ -8,18 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 169 (~69%) |
+| Menu commands | 245 | 174 (~71%) |
 | Dialogs | 27 | 18 |
-| App-layer code | 26,796 lines | 8,136 lines |
+| App-layer code | 26,796 lines | 8,375 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 175, but this counts separators
-grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 27
+grep -c '^ *MENUITEM' np2/np2.rc              # 182, but this counts separators
+grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 28
 grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-175 − 27 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **169**.
+182 − 28 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **174**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -162,9 +162,28 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 ~~2. **Toolbar.**~~ **Done** — commit `780c5e5`.
 ~~3. **Change Notify.**~~ **Done** — `np2/np2watch.c`, commit `614268d`. Polls `DosQueryPathInfo`
    on a `WinStartTimer` tick, keeping Notepad2's modes, its .ini key names and its settle delay.
-4. **The long tail** — Notepad2 has command variants this port folds together or omits: web-search
-   templates, `2nd default scheme`, per-encoding reload variants, "save copy", and similar. Each is
-   small; none is blocked.
+4. **The long tail — now enumerated, not guessed at.** Diff the two command surfaces by menu
+   **label** (ids were renamed, so a name diff is useless):
+
+   ```sh
+   iconv -f UTF-16LE -t UTF-8 src/Notepad2.rc > /tmp/n2.rc   # the original is UTF-16
+   # then compare MENUITEM/POPUP labels against np2/np2.rc, normalising & ~ \t and "..."
+   ```
+
+   That gives **40 differences**, of which several are only naming (their "Goto" against our
+   "Go To Line...", their "&?" menu against our "Help", their "Customize Schemes" against our
+   "Customize Colours"). ~~Five are done~~ — commit `6a02dc8`: Select to Next / Previous, Replace
+   Next, Use Selection as Find Text, Swap with Clipboard, Complete Word.
+
+   Genuinely outstanding, roughly in order of value:
+   - **File**: Save Copy, Properties, and the Favorites trio (Open / Add current / Manage).
+   - **Encoding**: the `More...` selection dialog, Recode, and the Unicode item.
+   - **View toggles** that only need a settings flag: 2nd default scheme, Sticky window position,
+     Save settings on exit, Remember recent files, Remember search strings, Auto-complete words,
+     Text excerpt, Transparent mode.
+   - **Needs design, not just work**: Reuse window / Single file instance (one-instance IPC),
+     Customize toolbar, Command line help.
+   - **Not applicable**: Minimize to tray — WarpCenter has no tray. See "Not applicable" below.
 
 ### Command-surface notes
 
