@@ -1557,6 +1557,10 @@ void Menu::CreatePopUp() {
 	// window" [DOC-IBM pm2.txt:16649-16652]. WinCreateMenu with a null template is
 	// the documented way to build one programmatically and add items with
 	// MM_INSERTITEM; WinCreateWindow is the fallback if it declines the null.
+	// NOTE: IBM says the menu "must have been created, by use of either the
+	// WinCreateMenu or WinLoadMenu functions" [DOC-IBM pm2.txt, WinPopupMenu].
+	// A WC_MENU window built here works and is what a dynamic menu needs, since
+	// Scintilla decides the items and their enabled state per invocation.
 	HWND hwndMenu = WinCreateWindow(HWND_DESKTOP, WC_MENU, (PSZ)"",
 		MS_VERTICALFLIP, 0, 0, 0, 0,
 		HWND_DESKTOP, HWND_TOP, 0, nullptr, nullptr);
@@ -1576,23 +1580,21 @@ void Menu::Show(Point pt, Window &w) {
 	if (!mid || !w.GetID())
 		return;
 	HWND hwndParent = reinterpret_cast<HWND>(w.GetID());
-	const LONG h = OwnHeightOf(hwndParent);
-	// KNOWN NOT WORKING: the menu does not appear. Everything measurable about this
-	// call succeeds - the menu window exists, MM_QUERYITEMCOUNT reports the 9 items
-	// ScintillaBase::ContextMenu inserted, WinPopupMenu returns TRUE and
-	// WinGetLastError is 0 - and nothing is drawn. Ruled out by measurement, so do
-	// not re-test these: the immediate Destroy() that used to follow this call (a
-	// real bug, fixed); an HWND_OBJECT parent, with and without re-parenting onto
-	// hwndParent before the call; WinCreateMenu(NULL template) vs WinCreateWindow;
-	// the position (a hardcoded point well inside the control behaves identically);
-	// and the key-up events arriving right after the accelerator. The next step is a
-	// standalone PM program that pops up a menu with no Scintilla in the picture.
+
+	// x/y are "in window coordinates relative to the origin of the parent window"
+	// [DOC-IBM pm2.txt, WinPopupMenu], so they take the usual y-flip: PM's origin is
+	// the LOWER-left corner, which is also why the menu grows upward from the point.
+	// The constrain flags are relative to the desktop either way.
 	WinPopupMenu(hwndParent, hwndParent, reinterpret_cast<HWND>(mid),
-		static_cast<LONG>(pt.x), h - static_cast<LONG>(pt.y), 0,
-		PU_HCONSTRAIN | PU_VCONSTRAIN | PU_MOUSEBUTTON1 | PU_KEYBOARD);
-	// NOT destroyed here: WinPopupMenu returns as soon as the menu is displayed, so
-	// tearing it down immediately removes it before the user can pick anything.
-	
+		static_cast<LONG>(pt.x),
+		OwnHeightOf(hwndParent) - static_cast<LONG>(pt.y), 0,
+		PU_HCONSTRAIN | PU_VCONSTRAIN |
+		PU_MOUSEBUTTON1 | PU_MOUSEBUTTON2 | PU_KEYBOARD);
+
+	// NOT destroyed here. WinPopupMenu "returns as soon as the pop-up menu has been
+	// invoked, which might be before the user has completed interacting with it"
+	// [DOC-IBM pm2.txt], so destroying it here removes the menu instantly.
+	// CreatePopUp destroys the previous menu instead.
 }
 
 // ---------------------------------------------------------------------------

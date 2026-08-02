@@ -149,6 +149,7 @@ public:
 
 	static void Register(HAB hab_);
 	static MRESULT EXPENTRY SciWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2);
+	enum { SCPM_SHOWCONTEXTMENU = WM_USER + 0x123 };
 	// ContextMenu() is protected in ScintillaBase; this is the one thing the
 	// application needs to reach from outside.
 	void ShowContextMenuAtCaret() { ContextMenu(PointMainCaret()); }
@@ -611,6 +612,10 @@ MRESULT ScintillaPM::WndProc(ULONG msg, MPARAM mp1, MPARAM mp2) {
 		ButtonDownWithModifiers(PtFromMsg(mp1), 0, CurrentModifiers());
 		return MRFROMLONG(TRUE);
 
+	case SCPM_SHOWCONTEXTMENU:
+		ShowContextMenuAtCaret();
+		return 0;
+
 	case WM_BUTTON2DOWN:
 		// PM has no WM_CONTEXTMENU. Button 2 is the OS/2 context button, and the
 		// point needs the same y-flip as every other mouse message.
@@ -745,10 +750,10 @@ void ScintillaPM::Register(HAB hab_) {
 // sees only VK_SHIFT). The application therefore binds Shift+F10 in its accelerator
 // table and calls this.
 extern "C" void Scintilla_ShowContextMenu(void *hwndSci) {
-	HWND h = reinterpret_cast<HWND>(hwndSci);
-	ScintillaPM *sci = static_cast<ScintillaPM *>(WinQueryWindowPtr(h, 0));
-	if (sci)
-		sci->ShowContextMenuAtCaret();
+	// POSTED, not called: the caller is an accelerator's WM_COMMAND handler, and a
+	// pop-up raised from inside that is dismissed as PM unwinds. Posting lets the
+	// menu come up from a clean dispatch.
+	WinPostMsg(reinterpret_cast<HWND>(hwndSci), ScintillaPM::SCPM_SHOWCONTEXTMENU, 0, 0);
 }
 
 extern "C" void Scintilla_RegisterClasses(void *hab_) {
