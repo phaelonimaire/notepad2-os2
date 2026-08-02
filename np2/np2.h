@@ -76,6 +76,7 @@
 /* Goto */
 #define IDC_LINENUM         700
 #define IDC_COLNUM          701
+#define IDC_COLWRAPCOL      702
 
 /* Tab settings */
 #define IDC_TABWIDTH        710
@@ -333,6 +334,7 @@
 #define IDM_TEXTEXCERPT     449
 #define IDM_REUSEWINDOW     450
 #define IDM_SINGLEFILEINST  451
+#define IDM_COLUMNWRAP      452
 
 /* A second instance hands its filename to the first through the system atom
  * table; mp1 carries the ATOM. See np2run.c. */

@@ -1570,6 +1570,15 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_COLUMNWRAP: {
+            /* Defaults to the long-line limit, which is the column the user has
+             * already said they care about. */
+            int iCol = settings.iLongLinesLimit;
+            if (EditColumnWrapDlg(hwnd, &iCol))
+                EditWrapToColumn(hwndSci, iCol);
+            break;
+        }
+
         case IDM_TEXTEXCERPT:
             /* Notepad2 shows the excerpt instead of the filename. Invoking it
              * with nothing selected clears it, which is how you get the name

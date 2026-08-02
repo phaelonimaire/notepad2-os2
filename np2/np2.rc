@@ -197,6 +197,7 @@ BEGIN
         MENUITEM "Customi~ze Colours...",  IDM_SCHEMECONFIG
         MENUITEM SEPARATOR
         MENUITEM "~Word Wrap",             IDM_WORDWRAP
+        MENUITEM "Column Wra~p...",        IDM_COLUMNWRAP
         MENUITEM "~Long Line Marker",      IDM_LONGLINEMARKER
         MENUITEM "Indentation ~Guides",    IDM_INDENTGUIDES
         MENUITEM "~Show Whitespace",       IDM_SHOWWHITESPACE
@@ -338,6 +339,17 @@ BEGIN
         PUSHBUTTON    "Replace ~All",  IDC_REPLACEALL,   238,  89, 64, 14
         PUSHBUTTON    "In ~Selection", IDC_REPLACEINSEL, 238,  71, 64, 14
         PUSHBUTTON    "Close",         DID_CANCEL,       238,  53, 64, 14
+    END
+END
+
+DLGTEMPLATE IDD_COLUMNWRAP
+BEGIN
+    DIALOG "Column Wrap", IDD_COLUMNWRAP, 20, 20, 208, 62, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT         "Wrap the selection at column:", -1, 8, 42, 190, 8
+        ENTRYFIELD    "", IDC_COLWRAPCOL,               8, 24, 50, 10, ES_MARGIN | ES_AUTOSCROLL
+        DEFPUSHBUTTON "OK",     DID_OK,                146, 40, 54, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL,            146, 20, 54, 14
     END
 END
 

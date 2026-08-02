@@ -1115,3 +1115,97 @@ void EditGetExcerpt(HWND h, char *pszOut, int cchOut)
     if (o >= cchOut - 1 || (e - s) > n)
         strcpy(pszOut + (cchOut - 4 < o ? cchOut - 4 : o), "...");
 }
+
+/* Column Wrap: re-flow the selection so no line exceeds nCol columns.
+ *
+ * Breaks only at existing white space, so a word longer than the column limit
+ * overhangs rather than being cut in half. Blank lines are preserved, since
+ * they usually separate paragraphs and losing them would change the text's
+ * structure rather than just its line breaks.
+ */
+void EditWrapToColumn(HWND h, int nCol)
+{
+    LONG  s, e, cch;
+    char *pIn, *pOut;
+    LONG  o = 0, col = 0;
+    LONG  i;
+    size_t cbOut;
+
+    if (nCol < 1)
+        return;
+    if (IsRect(h)) { WarnRect(h); return; }
+
+    s = SciL(h, SCI_GETSELECTIONSTART, 0);
+    e = SciL(h, SCI_GETSELECTIONEND, 0);
+    if (e <= s)
+        return;
+    cch = e - s;
+
+    pIn = (char *)malloc((size_t)cch + 1);
+    if (!pIn)
+        return;
+    SciP(h, SCI_GETSELTEXT, 0, pIn);
+    pIn[cch] = '\0';
+
+    /* Worst case one added line break per character. */
+    cbOut = (size_t)cch * 2 + 2;
+    pOut = (char *)malloc(cbOut);
+    if (!pOut) { free(pIn); return; }
+
+    for (i = 0; i < cch; i++) {
+        const char c = pIn[i];
+
+        if (c == '\r' || c == '\n') {
+            /* Keep a blank line; otherwise treat the break as a space so the
+             * paragraph re-flows. */
+            LONG j = i;
+            int  breaks = 0;
+            while (j < cch && (pIn[j] == '\r' || pIn[j] == '\n')) {
+                if (pIn[j] == '\n') breaks++;
+                j++;
+            }
+            if (breaks > 1) {
+                pOut[o++] = '\n'; pOut[o++] = '\n';
+                col = 0;
+            } else if (col > 0) {
+                pOut[o++] = ' ';
+                col++;
+            }
+            i = j - 1;
+            continue;
+        }
+
+        if (c == ' ' || c == '\t') {
+            if (col > 0 && pOut[o - 1] != ' ') { pOut[o++] = ' '; col++; }
+            continue;
+        }
+
+        /* Start of a word: measure it, and break the line first if it will not
+         * fit and the line already has something on it. */
+        {
+            LONG w = 0;
+            while (i + w < cch && pIn[i + w] != ' ' && pIn[i + w] != '\t' &&
+                   pIn[i + w] != '\r' && pIn[i + w] != '\n')
+                w++;
+            if (col + w > nCol && col > 0) {
+                if (o > 0 && pOut[o - 1] == ' ') { o--; }
+                pOut[o++] = '\n';
+                col = 0;
+            }
+            memcpy(pOut + o, pIn + i, (size_t)w);
+            o += w; col += w;
+            i += w - 1;
+        }
+    }
+    while (o > 0 && (pOut[o - 1] == ' ' || pOut[o - 1] == '\n'))
+        o--;
+    pOut[o] = '\0';
+
+    SciL(h, SCI_BEGINUNDOACTION, 0);
+    SciP(h, SCI_REPLACESEL, 0, pOut);
+    SciL(h, SCI_ENDUNDOACTION, 0);
+    SciMsg(h, SCI_SETSEL, s, (const void *)(LONG)(s + o));
+
+    free(pOut);
+    free(pIn);
+}

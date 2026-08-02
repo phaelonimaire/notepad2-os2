@@ -41,6 +41,7 @@ void SettingsDefaults(NP2SETTINGS *s);
 void ApplySettings(HWND hwndEdit, const NP2SETTINGS *s);
 
 BOOL EditGotoLineDlg(HWND hwndOwner, HWND hwndEdit);
+BOOL EditColumnWrapDlg(HWND hwndOwner, int *piCol);
 BOOL EditTabSettingsDlg(HWND hwndOwner, NP2SETTINGS *s);
 BOOL EditLongLinesDlg(HWND hwndOwner, NP2SETTINGS *s);
 BOOL EditWordWrapDlg(HWND hwndOwner, NP2SETTINGS *s);

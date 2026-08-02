@@ -191,6 +191,51 @@ static MRESULT EXPENTRY GotoDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2
     return WinDefDlgProc(hwnd, msg, mp1, mp2);
 }
 
+/*--------------------------------------------------------------------------
+ * Column wrap - one number, defaulted to the caller's long-line limit.
+ *------------------------------------------------------------------------*/
+
+static int iColWrapCol = 72;
+
+static MRESULT EXPENTRY ColumnWrapDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
+{
+    CHAR sz[16];
+    switch (msg) {
+    case WM_INITDLG:
+        sprintf(sz, "%d", iColWrapCol);
+        WinSetDlgItemText(hwnd, IDC_COLWRAPCOL, (PSZ)sz);
+        return (MRESULT)FALSE;
+
+    case WM_COMMAND:
+        switch (SHORT1FROMMP(mp1)) {
+        case DID_OK:
+            WinQueryDlgItemText(hwnd, IDC_COLWRAPCOL, sizeof(sz), (PSZ)sz);
+            iColWrapCol = atoi(sz);
+            if (iColWrapCol < 1)
+                iColWrapCol = 1;
+            WinDismissDlg(hwnd, DID_OK);
+            return (MRESULT)0;
+        case DID_CANCEL:
+            WinDismissDlg(hwnd, DID_CANCEL);
+            return (MRESULT)0;
+        }
+        break;
+    }
+    return WinDefDlgProc(hwnd, msg, mp1, mp2);
+}
+
+BOOL EditColumnWrapDlg(HWND hwndOwner, int *piCol)
+{
+    if (piCol && *piCol > 0)
+        iColWrapCol = *piCol;
+    if (WinDlgBox(HWND_DESKTOP, hwndOwner, ColumnWrapDlgProc, NULLHANDLE,
+                  IDD_COLUMNWRAP, NULL) != DID_OK)
+        return FALSE;
+    if (piCol)
+        *piCol = iColWrapCol;
+    return TRUE;
+}
+
 BOOL EditGotoLineDlg(HWND hwndOwner, HWND hwndEdit)
 {
     hwndEditForGoto = hwndEdit;
