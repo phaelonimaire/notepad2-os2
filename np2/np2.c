@@ -1691,6 +1691,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
         /* Reload As: re-read the same file, overriding detection. */
         case IDM_RELOAD_ANSI: case IDM_RELOAD_OEM: case IDM_RELOAD_UTF8:
+        case IDM_RELOAD_UTF8SIG: case IDM_RELOAD_UCS2LE: case IDM_RELOAD_UCS2BE:
             if (!szFileName[0]) {
                 WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Nothing to reload.",
                               (PSZ)"Reload", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
@@ -1699,8 +1700,8 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             if (ConfirmDiscard(hwnd)) {
                 CHAR szKeep[CCHMAXPATH];
                 strcpy(szKeep, szFileName);
-                iForceEncoding = (idCmd == IDM_RELOAD_ANSI) ? NP2ENC_ANSI :
-                                 (idCmd == IDM_RELOAD_OEM)  ? NP2ENC_OEM  : NP2ENC_UTF8;
+                /* The ids are contiguous in NP2ENC_* order - see np2.h. */
+                iForceEncoding = (int)(idCmd - IDM_RELOAD_ANSI);
                 szStatus[0] = '\0';
                 LoadFile(hwnd, (PSZ)szKeep);
                 ShowStatus();

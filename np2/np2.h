@@ -272,9 +272,15 @@
 #define IDM_ENC_UCS2LE      395
 #define IDM_ENC_UCS2BE      396
 #define IDM_RELOAD_MENU     397
-#define IDM_RELOAD_ANSI     398
-#define IDM_RELOAD_OEM      399
-#define IDM_RELOAD_UTF8     406
+/* The six IDM_RELOAD_* ids MUST stay contiguous and in NP2ENC_* order: the
+ * handler maps (id - IDM_RELOAD_ANSI) straight to the encoding constant, the
+ * same trick the Align dialog uses for its radio buttons. */
+#define IDM_RELOAD_ANSI     460
+#define IDM_RELOAD_OEM      461
+#define IDM_RELOAD_UTF8     462
+#define IDM_RELOAD_UTF8SIG  463
+#define IDM_RELOAD_UCS2LE   464
+#define IDM_RELOAD_UCS2BE   465
 
 /* Statusbar */
 #define IDM_STATUSBAR       410

@@ -239,9 +239,25 @@ BOOL EncToUtf8(int iEnc, const char *pIn, ULONG cbIn,
 
     if (pszErr) pszErr[0] = '\0';
 
-    /* Skip the byte-order mark: it is a signature, not content. */
-    if (iEnc == NP2ENC_UTF8SIG && cbIn >= 3) { pIn += 3; cbIn -= 3; }
-    if ((iEnc == NP2ENC_UCS2LE || iEnc == NP2ENC_UCS2BE) && cbIn >= 2) { pIn += 2; cbIn -= 2; }
+    /* Skip the byte-order mark: it is a signature, not content.
+     *
+     * Only skip one that is ACTUALLY THERE. Reloading a file as a chosen
+     * encoding is exactly the case where there is no signature to go on - that
+     * is why the user is choosing - and skipping unconditionally silently ate
+     * the first character of every BOM-less UTF-16 file. */
+    {
+        const unsigned char *b = (const unsigned char *)pIn;
+        if (iEnc == NP2ENC_UTF8SIG && cbIn >= 3 &&
+            b[0] == 0xEF && b[1] == 0xBB && b[2] == 0xBF) {
+            pIn += 3; cbIn -= 3;
+        } else if (iEnc == NP2ENC_UCS2LE && cbIn >= 2 &&
+                   b[0] == 0xFF && b[1] == 0xFE) {
+            pIn += 2; cbIn -= 2;
+        } else if (iEnc == NP2ENC_UCS2BE && cbIn >= 2 &&
+                   b[0] == 0xFE && b[1] == 0xFF) {
+            pIn += 2; cbIn -= 2;
+        }
+    }
 
     /* Already UTF-8: nothing to convert, just copy. */
     if (iEnc == NP2ENC_UTF8 || iEnc == NP2ENC_UTF8SIG) {

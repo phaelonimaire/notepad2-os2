@@ -39,6 +39,9 @@ BEGIN
             MENUITEM "~ANSI",  IDM_RELOAD_ANSI
             MENUITEM "~OEM",   IDM_RELOAD_OEM
             MENUITEM "UTF-~8", IDM_RELOAD_UTF8
+            MENUITEM "UTF-8 with ~Signature", IDM_RELOAD_UTF8SIG
+            MENUITEM "Unicode (UCS-2 ~LE)",   IDM_RELOAD_UCS2LE
+            MENUITEM "Unicode ~Big Endian",   IDM_RELOAD_UCS2BE
         END
         SUBMENU "~Launch", IDM_LAUNCH_MENU
         BEGIN
