@@ -3,3 +3,7 @@
 *.exe
 *.res
 *.map
+
+# this project's own clone of claude-os2-toolkit: a separate repo with its own
+# history, merged back to the toolkit rather than committed here
+claude-os2-toolkit/
