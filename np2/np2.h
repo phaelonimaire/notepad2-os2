@@ -58,7 +58,6 @@
 #define IDD_ABOUT       532
 
 /* --- control ids (scoped to their own dialog, so reuse across dialogs is fine) --- */
-#define IDC_COLUMNWRAP  100
 
 /* Find / Replace */
 #define IDC_FINDTEXT        600
@@ -275,7 +274,7 @@
 #define IDM_RELOAD_MENU     397
 #define IDM_RELOAD_ANSI     398
 #define IDM_RELOAD_OEM      399
-#define IDM_RELOAD_UTF8     400
+#define IDM_RELOAD_UTF8     406
 
 /* Statusbar */
 #define IDM_STATUSBAR       410
@@ -286,7 +285,7 @@
 
 /* Scheme editor */
 #define IDM_SCHEMECONFIG    411
-#define IDD_STYLECONFIG     550
+#define IDD_STYLECONFIG     552
 #define IDC_SLOTLIST        810
 #define IDC_SLOTCOLOUR      811
 #define IDC_SLOTBOLD        812

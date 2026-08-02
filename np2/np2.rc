@@ -262,6 +262,58 @@ END
  *    TOP of the stated rectangle and each combo sits well below its label.
  * ========================================================================== */
 
+DLGTEMPLATE IDD_FIND
+BEGIN
+    DIALOG "Find", IDD_FIND, 20, 20, 310, 110, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Search string:", -1, 8, 98, 80, 8
+
+        CONTROL "", IDC_FINDTEXT, 8, 50, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        AUTOCHECKBOX "Match ~case",                  IDC_FINDCASE,        8, 34, 135, 10
+        AUTOCHECKBOX "Match ~whole word only",       IDC_FINDWORD,        8, 22, 135, 10
+        AUTOCHECKBOX "Match ~beginning of word only", IDC_FINDSTART,      8, 10, 135, 10
+
+        AUTOCHECKBOX "Regular ~expression",          IDC_FINDREGEXP,    150, 34, 120, 10
+        AUTOCHECKBOX "~Transform backslashes",       IDC_FINDTRANSFORMBS, 150, 22, 120, 10
+        AUTOCHECKBOX "~Don't wrap around",           IDC_NOWRAP,        150, 10, 120, 10
+
+        DEFPUSHBUTTON "~Find Next", DID_OK,          238, 88, 64, 14
+        PUSHBUTTON    "~Previous",  IDC_FINDPREVBTN, 238, 70, 64, 14
+        PUSHBUTTON    "Close",      DID_CANCEL,      238, 52, 64, 14
+    END
+END
+
+DLGTEMPLATE IDD_REPLACE
+BEGIN
+    DIALOG "Replace", IDD_REPLACE, 20, 20, 310, 165, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        LTEXT   "Search string:", -1, 8, 152, 80, 8
+        CONTROL "", IDC_FINDTEXT, 8, 104, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP | WS_GROUP
+
+        LTEXT   "Replace with:", -1, 8, 94, 80, 8
+        CONTROL "", IDC_REPLACETEXT, 8, 46, 222, 44, WC_COMBOBOX,
+                CBS_DROPDOWN | WS_VISIBLE | WS_TABSTOP
+
+        AUTOCHECKBOX "Match ~case",                  IDC_FINDCASE,        8, 34, 135, 10
+        AUTOCHECKBOX "Match ~whole word only",       IDC_FINDWORD,        8, 22, 135, 10
+        AUTOCHECKBOX "Match ~beginning of word only", IDC_FINDSTART,      8, 10, 135, 10
+
+        AUTOCHECKBOX "Regular ~expression",          IDC_FINDREGEXP,    150, 34, 120, 10
+        AUTOCHECKBOX "~Transform backslashes",       IDC_FINDTRANSFORMBS, 150, 22, 120, 10
+        AUTOCHECKBOX "~Don't wrap around",           IDC_NOWRAP,        150, 10, 120, 10
+
+        DEFPUSHBUTTON "~Find Next",    DID_OK,           238, 143, 64, 14
+        PUSHBUTTON    "~Previous",     IDC_FINDPREVBTN,  238, 125, 64, 14
+        PUSHBUTTON    "~Replace",      IDC_REPLACEBTN,   238, 107, 64, 14
+        PUSHBUTTON    "Replace ~All",  IDC_REPLACEALL,   238,  89, 64, 14
+        PUSHBUTTON    "In ~Selection", IDC_REPLACEINSEL, 238,  71, 64, 14
+        PUSHBUTTON    "Close",         DID_CANCEL,       238,  53, 64, 14
+    END
+END
+
 DLGTEMPLATE IDD_GOTOLINE
 BEGIN
     DIALOG "Go To Line", IDD_GOTOLINE, 20, 20, 200, 64, , FCF_TITLEBAR | FCF_SYSMENU
