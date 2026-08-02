@@ -2,7 +2,7 @@
  *
  * The sequence is the one in os2ref/printing-spooler.md 7:
  *
- *   DevOpenDC(hab, OD_QUEUED, "*", 4, &dop, NULL)
+ *   DevOpenDC(hab, OD_QUEUED, "*", 5, &dop, NULL)
  *   GpiCreatePS(..., GPIA_ASSOC)
  *   DevEscape(DEVESC_STARTDOC)
  *     ... GPI drawing for a page ...
@@ -17,6 +17,9 @@
  *    pDriverData is used.
  *  - A DC opened with DevOpenDC must be closed with DevCloseDC - never with
  *    anything else, and never left open.
+ *  - The lCount argument is the number of DEVOPENSTRUC fields supplied, not a
+ *    fixed constant: 4 is the documented MINIMUM for a queued context, and this
+ *    file supplies 5 (through pszComment), so it passes 5.
  *
  * Rendering is deliberately plain: the document's text, in the editor's font,
  * paginated by the printable height. Notepad2's header/footer and colour

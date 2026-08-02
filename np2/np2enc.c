@@ -65,15 +65,22 @@ static BOOL OpenConv(UconvObject *pObj, unsigned long ulCp, const char *pszName,
         UcsName(pszName, aName, 32);
     else if (UniMapCpToUcsCp(ulCp, aName, 32) != 0) {
         if (pszErr)
-            sprintf(pszErr, "UniMapCpToUcsCp failed for code page %lu", ulCp);
+            snprintf(pszErr, (size_t)cchErr,
+                     "UniMapCpToUcsCp failed for code page %lu", ulCp);
         return FALSE;
     }
 
     rc = UniCreateUconvObject(aName, pObj);
     if (rc != 0) {
-        if (pszErr)
-            sprintf(pszErr, "UniCreateUconvObject rc=%d for %s%lu",
-                    rc, pszName ? pszName : "code page ", pszName ? 0UL : ulCp);
+        /* One conditional format string per case. Folding them into "%s%lu" fed
+         * the %lu a dummy 0 in the named case, so a name-based failure reported
+         * "... for utf-80". */
+        if (pszErr && pszName)
+            snprintf(pszErr, (size_t)cchErr,
+                     "UniCreateUconvObject rc=%d for %s", rc, pszName);
+        else if (pszErr)
+            snprintf(pszErr, (size_t)cchErr,
+                     "UniCreateUconvObject rc=%d for code page %lu", rc, ulCp);
         return FALSE;
     }
     return TRUE;
