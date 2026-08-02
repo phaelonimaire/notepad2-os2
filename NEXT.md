@@ -8,18 +8,32 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 187 (~76%) |
+| Menu commands (distinct) | 146 | 141 (~97%) |
 | Dialogs | 27 | 18 |
 | App-layer code | 26,796 lines | 8,455 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-grep -c '^ *MENUITEM' np2/np2.rc              # 197, but this counts separators
-grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 30
-grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
+# Notepad2's distinct main-menu commands - NOT a raw MENUITEM count
+iconv -f UTF-16LE -t UTF-8 src/Notepad2.rc > /tmp/n2.rc   # the original is UTF-16
+# then count non-SEPARATOR MENUITEM labels between IDR_MAINWND MENU and its END
 ```
-197 − 30 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **187**.
+
+> **The old "245" was wrong, and flattered nothing — it undersold the port.** It counted every
+> `MENUITEM` line in the whole `.rc`: separators, and `IDR_POPUPMENU`, which repeats main-menu
+> commands. Notepad2's actual main menu holds **146 distinct commands**. Comparing by *label*
+> (ids were renamed, so a name diff finds nothing) this port covers **141**.
+
+The five not covered, and none is simply unwritten:
+
+| Not covered | Why |
+|---|---|
+| 2nd default scheme | **Design decision.** This port shares one semantic palette across schemes — a deliberate departure from Notepad2's per-style editing, recorded in `np2style.h`. The item either means "the palette gains a second saved copy" or it is an artefact of the model this port did not follow. Someone should choose. |
+| Customize toolbar | **Design decision.** There is no PM toolbar class; the bar is a composed row of `WC_BUTTON`s, so what is configurable — button set, order, visibility — has to be settled before a dialog can edit it. |
+| Minimize to tray | **N/A.** WarpCenter has no system tray. XWorkplace's taskbar does, which would be an add-on dependency. |
+| Encoding `More...` | **N/A.** Notepad2 needs a picker because it offers every installed code page; this port supports six and lists them all on the menu. Revisit if that changes. |
+| Transparent mode | **Probably N/A** — PM on Warp 4.5x has no per-window alpha. Confirm against the `WS_*`/`SWP_*` set before implementing or dismissing it. |
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
