@@ -364,7 +364,19 @@ void SurfaceImpl::SetFont(Font &font_) {
 		if (nextLcid <= 254) {
 			lcid = nextLcid++;
 		} else {
-			lcid = 254;   // scratch: recycle the last slot rather than fail outright
+			// Scratch: recycle the last slot rather than fail outright. Whoever held
+			// it must lose its cache entry as well - otherwise that font still maps to
+			// 254, takes the hit path above on its next SetFont, and silently renders
+			// in whatever font redefined the slot. Erase by value, not by key: the
+			// evicted FontID is not known here.
+			lcid = 254;
+			for (std::map<FontID, LONG>::iterator ev = lcidForFont.begin();
+			     ev != lcidForFont.end(); ) {
+				if (ev->second == lcid)
+					lcidForFont.erase(ev++);
+				else
+					++ev;
+			}
 		}
 		// A setid must not be redefined while it is the current pattern/marker set, and
 		// must not be deleted while selected [DOC-IBM - gpi-fonts-and-metafiles.md 1].
