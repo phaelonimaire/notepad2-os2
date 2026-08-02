@@ -1,6 +1,6 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-07-29 (Find/Replace, ten dialogs, the command surface, syntax highlighting).
+Checkpoint: 2026-08-01 (toolbar, file change notification, and a mouse-capable test harness).
 
 ## Where this stands
 
@@ -8,17 +8,18 @@ The **platform layer is done**; the **application is not**.
 
 | | Windows Notepad2 | this port |
 |---|---|---|
-| Menu commands | 245 | 166 (~68%) |
-| Dialogs | 27 | 13 |
-| App-layer code | 26,796 lines | 5,560 lines |
+| Menu commands | 245 | 169 (~69%) |
+| Dialogs | 27 | 18 |
+| App-layer code | 26,796 lines | 8,136 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
 ```sh
-# static menu items, minus the (none) placeholder, plus the run-time scheme list
-grep -c '^ *MENUITEM' np2/np2.rc            # excludes SEPARATOR lines by hand
+grep -c '^ *MENUITEM' np2/np2.rc              # 175, but this counts separators
+grep -c '^ *MENUITEM SEPARATOR' np2/np2.rc    # 27
+grep -c '^DLGTEMPLATE' np2/np2.rc             # 18
 ```
-146 static `MENUITEM`s − 1 placeholder + 21 syntax schemes built at run time = **166**.
+175 − 27 separators − 1 `(none)` placeholder + 21 syntax schemes built at run time = **169**.
 
 What is still missing is whole menus rather than scattered gaps, and the text-editing surface is
 complete. See "What is left" for what each remaining item actually requires.
@@ -39,14 +40,14 @@ look impossible. Sized honestly:
 | ~~Statusbar~~ | **Done** — four `WC_STATIC` panels | |
 | ~~Favorites / Open With / Desktop Link~~ | **Done** — commit `fc2e14e`; desktop link is a real WPS shadow | |
 | ~~Window title / Esc key / misc preferences~~ | **Done** — commit `793f6e4` | |
-| **Toolbar** | No PM control class — owner-drawn buttons on a composed bar. Lower value than the statusbar was | **Medium** |
+| ~~Toolbar~~ | **Done** — commit `780c5e5`; composed from `WC_BUTTON`, there being no PM toolbar class. Button presses verified by mouse | |
 | ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
 | ~~Scheme editor~~ | **Done** — Customize Colours, commit `11fc683` | |
 | ~~Recent Files~~ | **Done** — `WC_LISTBOX` MRU, commit `04f3171`. Per-file icons still want the container | |
 | ~~File browser on `WC_CONTAINER`~~ | **Done** — `np2/np2browse.c`, commit `caff65e`. Favorites and Open With can now be built on the same code | |
 | ~~Print / Page Setup~~ | **Written** — commit `1b4ddc0`. **Not fully verified**: this VM has no printer driver, so only the queue-discovery half has ever run. See "not seen working" below | |
-| **Change Notify** | **Genuinely blocked.** OS/2 has no file-change notification at any layer — verified across all of `/usr/include`. The dialog is trivial; the feature must poll `DosQueryPathInfo` timestamps | **The only real platform limit** |
+| ~~**Change Notify**~~ | **Done** — `np2/np2watch.c`, commit `614268d`. OS/2 has no file-change notification at any layer, and this remains the only genuine platform absence found in the whole port. It cost less than the label implied: Notepad2 already polls, and only used the Win32 API as a gate in front of the timestamp comparison that does the real work | **Was the only real platform limit** |
 
 `scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
 `ListBox`, `Menu`, `ElapsedTime`, `DynamicLibrary`, the `Platform` statics, and `ScintillaPM.cxx` —
@@ -66,8 +67,10 @@ Enclose shortcuts, Convert (five case modes, tabify/untabify by selection or ind
 (date/time, filename, path), Special (line/stream comment, URL and C escaping, char↔hex, matching
 brace, delete line/word left/right), Bookmarks, and the View toggles with zoom.
 
-What is genuinely missing now is **encodings**, a **file browser**, and **settings persistence** —
-not editing commands, and no longer highlighting.
+Encodings, the file browser, settings persistence, the toolbar and change notification have all
+landed since that paragraph was first written. What is left is **printing verification** (needs a
+guest with a printer driver), the **scheme editor**, and the **long tail** of command variants —
+no whole subsystem, and nothing blocked.
 
 ## Build
 
@@ -92,7 +95,7 @@ g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /t
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
     np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c \
-    np2enc.c np2browse.c np2print.c \
+    np2enc.c np2browse.c np2print.c np2watch.c \
     np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 ```
@@ -156,8 +159,9 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 
 1. **Verify printing on a target that has a printer.** The code follows the documented sequence;
    nothing has ever reached `DevOpenDC`. Install any driver on the VM and re-test.
-2. **Toolbar** — owner-drawn buttons on a composed bar; there is no PM toolbar class.
-3. **Change Notify** — the dialog is trivial; the feature must poll (no OS/2 notification API).
+~~2. **Toolbar.**~~ **Done** — commit `780c5e5`.
+~~3. **Change Notify.**~~ **Done** — `np2/np2watch.c`, commit `614268d`. Polls `DosQueryPathInfo`
+   on a `WinStartTimer` tick, keeping Notepad2's modes, its .ini key names and its settle delay.
 4. **The long tail** — Notepad2 has command variants this port folds together or omits: web-search
    templates, `2nd default scheme`, per-encoding reload variants, "save copy", and similar. Each is
    small; none is blocked.
