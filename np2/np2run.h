@@ -32,6 +32,11 @@ HWND Np2FindInstance(const char *pszClientClass);
 BOOL Np2HandOffFile(HWND hwndClient, ULONG msg, const char *pszFile);
 BOOL Np2TakeHandOff(ULONG atomValue, char *pszOut, int cchOut);
 
+/* Single file instance: which instance, if any, already holds this file. */
+HWND Np2FindInstanceHolding(const char *pszClientClass, ULONG msgQuery,
+                            const char *pszFile);
+BOOL Np2AtomNamesFile(ULONG atomValue, const char *pszMine);
+
 /* Notepad2's Run dialog: a command line, executed via RunProgram. */
 BOOL RunCommandDlg(HWND hwndOwner, char *pszCmd, int cchCmd);
 

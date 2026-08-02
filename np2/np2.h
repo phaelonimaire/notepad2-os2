@@ -332,10 +332,14 @@
 #define IDM_PROPERTIES      448
 #define IDM_TEXTEXCERPT     449
 #define IDM_REUSEWINDOW     450
+#define IDM_SINGLEFILEINST  451
 
 /* A second instance hands its filename to the first through the system atom
  * table; mp1 carries the ATOM. See np2run.c. */
 #define NP2_OPENFILE (WM_USER + 50)
+/* Sent (not posted) to ask an instance whether mp1's atom names the file it has
+ * open. Answers TRUE/FALSE; the asker owns the atom. */
+#define NP2_QUERYFILE (WM_USER + 51)
 #define IDD_CHANGENOTIFY    565
 #define IDC_WATCH_NONE      840
 #define IDC_WATCH_MSGBOX    841

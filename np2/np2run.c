@@ -246,3 +246,70 @@ BOOL Np2TakeHandOff(ULONG atomValue, char *pszOut, int cchOut)
     WinDeleteAtom(hatomtbl, atom);
     return (cch > 0);
 }
+
+/* Single file instance: find the instance that already holds a given file.
+ *
+ * This one asks rather than tells, so it uses WinSendMsg - which PM delivers
+ * across processes, unlike a pointer - with the path again passed as an atom.
+ * The receiver answers TRUE if that is the file it has open. Returns the client
+ * window that holds it, or NULLHANDLE.
+ */
+HWND Np2FindInstanceHolding(const char *pszClientClass, ULONG msgQuery,
+                            const char *pszFile)
+{
+    HATOMTBL hatomtbl;
+    HENUM    henum;
+    HWND     hwndFrame, hwndFound = NULLHANDLE;
+    ATOM     atom;
+    CHAR     szClass[64];
+
+    if (!pszFile || !pszFile[0])
+        return NULLHANDLE;
+    hatomtbl = WinQuerySystemAtomTable();
+    atom = WinAddAtom(hatomtbl, (PCSZ)pszFile);
+    if (atom == 0)
+        return NULLHANDLE;
+
+    henum = WinBeginEnumWindows(HWND_DESKTOP);
+    while ((hwndFrame = WinGetNextWindow(henum)) != NULLHANDLE) {
+        HWND hwndClient = WinWindowFromID(hwndFrame, FID_CLIENT);
+        if (hwndClient == NULLHANDLE)
+            continue;
+        if (WinQueryClassName(hwndClient, sizeof(szClass), (PCH)szClass) <= 0 ||
+            strcmp(szClass, pszClientClass) != 0)
+            continue;
+        if (LONGFROMMR(WinSendMsg(hwndClient, msgQuery,
+                                  MPFROMLONG((LONG)atom), 0))) {
+            hwndFound = hwndClient;
+            break;
+        }
+    }
+    WinEndEnumWindows(henum);
+
+    /* The query does not consume the atom - only the sender knows when every
+     * instance has been asked. */
+    WinDeleteAtom(hatomtbl, atom);
+
+    if (hwndFound != NULLHANDLE)
+        WinSetActiveWindow(HWND_DESKTOP, WinQueryWindow(hwndFound, QW_PARENT));
+    return hwndFound;
+}
+
+/* Receiver side for the query: is pszMine the file named by this atom? Does NOT
+ * delete the atom - the asker owns it. */
+BOOL Np2AtomNamesFile(ULONG atomValue, const char *pszMine)
+{
+    CHAR  szName[CCHMAXPATH];
+    ULONG cch;
+
+    if (!pszMine || !pszMine[0] || atomValue == 0)
+        return FALSE;
+    cch = WinQueryAtomName(WinQuerySystemAtomTable(), (ATOM)atomValue,
+                           (PSZ)szName, sizeof(szName));
+    if (cch == 0)
+        return FALSE;
+    /* strcasecmp, not stricmp: the latter is not declared under -std=c++11 here,
+     * and the rest of this port already uses strcasecmp. OS/2 paths are
+     * case-insensitive, so the compare must be too. */
+    return (strcasecmp(szName, pszMine) == 0);
+}

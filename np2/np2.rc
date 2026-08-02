@@ -243,6 +243,7 @@ BEGIN
         MENUITEM "Remem~ber Search Strings", IDM_SAVEFINDREPL
         MENUITEM "Stic~ky Window Position",  IDM_STICKYWINPOS
         MENUITEM "Reuse Window (~Hand Off Files)", IDM_REUSEWINDOW
+        MENUITEM "Single File Instance", IDM_SINGLEFILEINST
         MENUITEM SEPARATOR
         SUBMENU "Window Title ~Display", IDM_TITLE_MENU
         BEGIN
