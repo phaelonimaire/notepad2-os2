@@ -877,3 +877,180 @@ void EditMarkAll(HWND h, int iMark, BOOL bMatchCase, BOOL bMatchWords)
 
     free(pszText);
 }
+
+/* ---- Clipboard swap, word selection, word completion -----------------------
+ * All three are plain Scintilla-message code; nothing here is platform-specific
+ * beyond the WinSendMsg wrapper above.
+ */
+
+/* Exchange the selection with the clipboard. With nothing selected, Notepad2
+ * pastes and selects what it pasted, then empties the clipboard. */
+void EditSwapClipboard(HWND h)
+{
+    const LONG selStart = SciL(h, SCI_GETSELECTIONSTART, 0);
+    const LONG selEnd   = SciL(h, SCI_GETSELECTIONEND, 0);
+
+    if (selEnd == selStart) {
+        const LONG pos = SciL(h, SCI_GETCURRENTPOS, 0);
+        SciL(h, SCI_PASTE, 0);
+        SciMsg(h, SCI_SETSEL, pos, (const void *)(LONG)SciL(h, SCI_GETCURRENTPOS, 0));
+        return;
+    }
+
+    {
+        /* Take a copy of the selection before the paste replaces it, then put
+         * that copy back on the clipboard afterwards. */
+        const LONG cch = selEnd - selStart;
+        char *pOld = (char *)malloc((size_t)cch + 1);
+        if (!pOld)
+            return;
+        SciP(h, SCI_GETSELTEXT, 0, pOld);
+        pOld[cch] = '\0';
+
+        SciL(h, SCI_BEGINUNDOACTION, 0);
+        SciL(h, SCI_PASTE, 0);
+        SciL(h, SCI_ENDUNDOACTION, 0);
+
+        SciP(h, SCI_COPYTEXT, cch, pOld);
+        free(pOld);
+    }
+}
+
+/* Select the word under the caret, leaving the selection alone if there is one. */
+void EditSelectWord(HWND h)
+{
+    const LONG pos = SciL(h, SCI_GETCURRENTPOS, 0);
+    LONG s, e;
+    if (SciL(h, SCI_GETSELECTIONEND, 0) != SciL(h, SCI_GETSELECTIONSTART, 0))
+        return;
+    s = SciMsg(h, SCI_WORDSTARTPOSITION, pos, (const void *)(LONG)TRUE);
+    e = SciMsg(h, SCI_WORDENDPOSITION,   pos, (const void *)(LONG)TRUE);
+    if (e > s)
+        SciMsg(h, SCI_SETSEL, s, (const void *)e);
+}
+
+/* Copy the selection - or the word at the caret - into pszOut. Returns its
+ * length, or 0 when there is nothing usable. */
+LONG EditGetSelOrWord(HWND h, char *pszOut, LONG cchOut)
+{
+    LONG s = SciL(h, SCI_GETSELECTIONSTART, 0);
+    LONG e = SciL(h, SCI_GETSELECTIONEND, 0);
+    if (e == s) {
+        EditSelectWord(h);
+        s = SciL(h, SCI_GETSELECTIONSTART, 0);
+        e = SciL(h, SCI_GETSELECTIONEND, 0);
+    }
+    if (e <= s || (e - s) >= cchOut)
+        return 0;
+    SciP(h, SCI_GETSELTEXT, 0, pszOut);
+    pszOut[e - s] = '\0';
+    /* A find string spanning a line break is not useful. */
+    if (strpbrk(pszOut, "\r\n")) {
+        pszOut[0] = '\0';
+        return 0;
+    }
+    return e - s;
+}
+
+/* Autocompletion from words already in the document - Notepad2's "Complete Word".
+ *
+ * Collects every distinct word that begins with the partial word at the caret and
+ * hands the list to Scintilla, which owns the popup. SCFIND_WORDSTART restricts
+ * matches to word beginnings, so "co" offers "count" but not "iconv".
+ */
+static int CmpWord(const void *a, const void *b)
+{
+    return strcmp(*(const char *const *)a, *(const char *const *)b);
+}
+
+#define NP2_MAXCOMPLETIONS 500
+#define NP2_MAXWORDLEN     128
+
+BOOL EditCompleteWord(HWND h)
+{
+    const LONG pos       = SciL(h, SCI_GETCURRENTPOS, 0);
+    const LONG wordStart = SciMsg(h, SCI_WORDSTARTPOSITION, pos, (const void *)(LONG)TRUE);
+    const LONG cchPrefix = pos - wordStart;
+    const LONG cchDoc    = SciL(h, SCI_GETLENGTH, 0);
+    char   szPrefix[NP2_MAXWORDLEN];
+    char  *apWords[NP2_MAXCOMPLETIONS];
+    int    cWords = 0, i;
+    LONG   iStart = 0;
+    struct Sci_TextRange tr;
+    struct Sci_TextToFind ttf;
+    char  *pszList;
+    size_t cbList = 1;
+
+    if (cchPrefix < 1 || cchPrefix >= (LONG)sizeof(szPrefix))
+        return FALSE;
+
+    tr.chrg.cpMin = wordStart;
+    tr.chrg.cpMax = pos;
+    tr.lpstrText  = szPrefix;
+    SciP(h, SCI_GETTEXTRANGE, 0, &tr);
+    szPrefix[cchPrefix] = '\0';
+
+    while (iStart < cchDoc && cWords < NP2_MAXCOMPLETIONS) {
+        LONG found, wordEnd, cchWord;
+        char szWord[NP2_MAXWORDLEN];
+
+        ttf.chrg.cpMin = iStart;
+        ttf.chrg.cpMax = cchDoc;
+        ttf.lpstrText  = szPrefix;
+        found = SciMsg(h, SCI_FINDTEXT,
+            (LONG)(SCFIND_WORDSTART | SCFIND_MATCHCASE), &ttf);
+        if (found < 0)
+            break;
+        iStart = ttf.chrgText.cpMax;
+
+        wordEnd = SciMsg(h, SCI_WORDENDPOSITION, ttf.chrgText.cpMin,
+            (const void *)(LONG)TRUE);
+        cchWord = wordEnd - ttf.chrgText.cpMin;
+        /* Skip the word being typed, and anything too long to be useful. */
+        if (cchWord <= cchPrefix || cchWord >= (LONG)sizeof(szWord))
+            continue;
+        if (ttf.chrgText.cpMin == wordStart)
+            continue;
+
+        tr.chrg.cpMin = ttf.chrgText.cpMin;
+        tr.chrg.cpMax = wordEnd;
+        tr.lpstrText  = szWord;
+        SciP(h, SCI_GETTEXTRANGE, 0, &tr);
+        szWord[cchWord] = '\0';
+
+        for (i = 0; i < cWords; i++)
+            if (strcmp(apWords[i], szWord) == 0)
+                break;
+        if (i < cWords)
+            continue;                      /* already have it */
+
+        apWords[cWords] = strdup(szWord);
+        if (!apWords[cWords])
+            break;
+        cbList += strlen(szWord) + 1;
+        cWords++;
+    }
+
+    if (cWords == 0)
+        return FALSE;
+
+    qsort(apWords, (size_t)cWords, sizeof(apWords[0]), CmpWord);
+
+    pszList = (char *)malloc(cbList);
+    if (pszList) {
+        pszList[0] = '\0';
+        for (i = 0; i < cWords; i++) {
+            if (i)
+                strcat(pszList, "\n");
+            strcat(pszList, apWords[i]);
+        }
+        /* A space would split words that cannot contain one anyway, but newline
+         * is unambiguous and matches what this list can never hold. */
+        SciL(h, SCI_AUTOCSETSEPARATOR, (LONG)'\n');
+        SciP(h, SCI_AUTOCSHOW, cchPrefix, pszList);
+        free(pszList);
+    }
+    for (i = 0; i < cWords; i++)
+        free(apWords[i]);
+    return TRUE;
+}

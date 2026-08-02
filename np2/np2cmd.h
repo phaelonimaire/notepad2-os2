@@ -37,6 +37,12 @@ void EditUnescapeCChars(HWND h);
 void EditChar2Hex(HWND h);
 void EditHex2Char(HWND h);
 void EditToggleLineComments(HWND h, const char *pszComment, BOOL bInsertAtStart);
+
+/* Clipboard swap, word selection, and completion from words in the document. */
+void EditSwapClipboard(HWND h);
+void EditSelectWord(HWND h);
+LONG EditGetSelOrWord(HWND h, char *pszOut, LONG cchOut);
+BOOL EditCompleteWord(HWND h);
 void EditFindMatchingBrace(HWND h, BOOL bSelect);
 
 /* Insert */

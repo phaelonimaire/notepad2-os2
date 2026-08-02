@@ -1479,6 +1479,45 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_SELTONEXT:
+        case IDM_SELTOPREV:
+        case IDM_REPLACENEXT:
+            /* With no search string yet, open the dialog rather than doing
+             * nothing - Notepad2's behaviour, and a silent no-op here reads as
+             * a dead menu item. */
+            if (!efrData.szFind[0]) {
+                EditFindReplaceDlg(hwnd, hwndSci, &efrData,
+                                   idCmd == IDM_REPLACENEXT);
+            } else if (idCmd == IDM_SELTONEXT) {
+                EditFindNext(hwndSci, &efrData, TRUE);
+            } else if (idCmd == IDM_SELTOPREV) {
+                EditFindPrev(hwndSci, &efrData, TRUE);
+            } else {
+                EditReplace(hwndSci, &efrData);
+            }
+            break;
+
+        case IDM_SAVEFIND:
+            /* Take the selection - or the word at the caret - as the search
+             * string, so F3 then repeats it without opening the dialog. */
+            if (EditGetSelOrWord(hwndSci, efrData.szFind, sizeof(efrData.szFind)) > 0)
+                sprintf(szStatus, "find text: %s", efrData.szFind);
+            else
+                strcpy(szStatus, "nothing selected to use as find text");
+            ShowStatus();
+            break;
+
+        case IDM_SWAPCLIP:
+            EditSwapClipboard(hwndSci);
+            break;
+
+        case IDM_COMPLETEWORD:
+            if (!EditCompleteWord(hwndSci)) {
+                strcpy(szStatus, "no completions");
+                ShowStatus();
+            }
+            break;
+
         case IDM_CONTEXTMENU:
             /* Shift+F10 is the keyboard route to the editor's context menu.
              * It cannot live in the control: PM never delivers F10 to the

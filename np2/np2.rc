@@ -65,6 +65,10 @@ BEGIN
         MENUITEM "~Paste\tCtrl+V",  IDM_PASTE
         MENUITEM "Cle~ar",           IDM_CLEAR
         MENUITEM "Clear Clip~board", IDM_CLEARCLIPBOARD
+        MENUITEM "Swap with Clipboard", IDM_SWAPCLIP
+        /* No mnemonic: the Edit scope has only q/v/z free and none appears in a
+           natural label for these. An accelerator serves them instead. */
+        MENUITEM "Complete Word\tCtrl+Space", IDM_COMPLETEWORD
         MENUITEM SEPARATOR
         MENUITEM "~Select All\tCtrl+A", IDM_SELECTALL
         MENUITEM SEPARATOR
@@ -167,6 +171,11 @@ BEGIN
         MENUITEM "Find ~Next\tF3",       IDM_FINDNEXT
         MENUITEM "Find ~Previous\tShift+F3", IDM_FINDPREV
         MENUITEM "~Replace...\tCtrl+H",  IDM_REPLACE
+        MENUITEM "Rep~lace Next\tShift+F4",  IDM_REPLACENEXT
+        MENUITEM SEPARATOR
+        MENUITEM "Select to Ne~xt\tCtrl+F3",           IDM_SELTONEXT
+        MENUITEM "Select to Pre~vious\tCtrl+Shift+F3", IDM_SELTOPREV
+        MENUITEM "~Use Selection as Find Text\tCtrl+F2", IDM_SAVEFIND
         MENUITEM SEPARATOR
         MENUITEM "~Go To Line...\tCtrl+G", IDM_GOTOLINE
     END
@@ -600,6 +609,11 @@ BEGIN
        convention Notepad2 uses and OS/2 editors share. */
     VK_F3, IDM_FINDNEXT, VIRTUALKEY
     VK_F3, IDM_FINDPREV, VIRTUALKEY, SHIFT
+    VK_F3, IDM_SELTONEXT, VIRTUALKEY, CONTROL
+    VK_F3, IDM_SELTOPREV, VIRTUALKEY, CONTROL, SHIFT
+    VK_F4, IDM_REPLACENEXT, VIRTUALKEY, SHIFT
+    VK_F2, IDM_SAVEFIND, VIRTUALKEY, CONTROL
+    VK_SPACE, IDM_COMPLETEWORD, VIRTUALKEY, CONTROL
     VK_F5, IDM_CHANGENOTIFY, VIRTUALKEY, ALT
 
     /* PM reserves F10 for the action bar and never delivers it to the focus
