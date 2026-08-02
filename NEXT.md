@@ -1,6 +1,9 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-08-01 (toolbar, file change notification, and a mouse-capable test harness).
+Checkpoint: 2026-08-02 (a read-through audit of the port: one systemic buffer-overflow class fixed,
+and one error found in the toolkit reference itself).
+
+Previously: 2026-08-01 (toolbar, file change notification, and a mouse-capable test harness).
 
 ## Where this stands
 
@@ -322,6 +325,51 @@ Fixed in `04f3171`; see the toolkit's `recipes/porting-a-windows-app.md` §5.0.
 - Sort/align are still byte-oriented (`np2edit.c`); `UniStrcoll`/`UniTransUpper` would make them
   character-correct now that the conversion plumbing exists.
 
+### Audit — 2026-08-02
+
+A read-through of the whole port, checking each OS/2 convention against the Toolkit headers on the
+build host and against klibc as shipping code, rather than against memory. It found **one systemic
+defect, not scattered ones**: `sprintf` into a fixed buffer whose input is a filename, a directory
+or the user's selection. **32 call sites**, three of them reachable in ordinary use. Fixed in
+`cf1a918`:
+
+| Was | Where | Worst case |
+|---|---|---|
+| `cchPick` carried and never consulted | `BrowseDlg`, `np2browse.c` | ~515 bytes into the **caller's** `CHAR[CCHMAXPATH]` |
+| `sprintf(szStatus, "find text: %s", …)` | `IDM_SAVEFIND`, `np2.c` | 511-char selection → 267 bytes past a 256-byte static |
+| `sprintf(szStatus, "Saved %lu bytes to %s", …)` | ordinary save path, `np2.c` | ~295 into 256, on any long path |
+| `szTitle[400]` | `ShowStatus`, `np2.c` | 539 worst case |
+
+`ShowStatus`'s two locals were **resized, not just bounded** — `snprintf` alone would have traded a
+stack smash for a silent truncation of the *tail*, quietly costing `" - Notepad2 for OS/2"` off the
+title bar on a deep path. `np2browse.c` grew a single `JoinPath()` because four sites had open-coded
+the same `dir[strlen(dir)-1]` idiom, which also reads index `[-1]` on an empty directory; only one
+of the four guarded it.
+
+Also fixed: a stale `lcid` cache entry in `PlatPM.cxx` that would render a font in the wrong face
+once a PS passed 254 setids (`6d39236`; latent — Notepad2 styles nothing like that many), and an
+error string in `np2enc.c` that reported `for utf-80` (`f00da76`).
+
+**The toolkit was wrong and the port was right**, which is the whole point of building this thing:
+`os2ref/file-io.md` §5.1 paired the find-buffer records with info levels by their suffix, but the
+digit in `FILEFINDBUF3` is the **API generation**, not the level — `FIL_STANDARD` is 1 and level 3
+is `FIL_QUERYEASFROMLIST`. `bsedos.h:433-439` gives the values and klibc pairs `FIL_STANDARD` with
+`PFILEFINDBUF3` in `fs.c:1302-1306`. Following the old text would have been silent: `FILEFINDBUF`
+has no `oNextEntryOffset` and a 16-bit `attrFile`, so every directory flag and filename would come
+out wrong with `NO_ERROR` returned. Corrected on the `notepad2` branch of this project's toolkit
+clone (`491a02b`), not yet pushed to the hub.
+
+One method note worth keeping: **the app sources type-check on the Linux side.**
+
+```sh
+EMX=<path to>/libc/src/emx/include
+g++ -std=c++11 -fsyntax-only -m32 -I"$EMX" -Iscintilla/include -Iscintilla/src -Inp2 np2/np2.c
+```
+
+That is not a build — it cannot see the OS/2 libraries and `PlatPM.cxx` fails on `<map>` for want of
+32-bit libstdc++ headers — but it catches undeclared identifiers and type errors before a file ever
+reaches the guest, and it caught two mistakes in the audit fixes themselves.
+
 ### Verification status — what has NOT been seen working
 
 Everything else described here has been exercised on screen. These have not, and should not be
@@ -330,6 +378,18 @@ read as working:
 - **Printing.** The test VM has no printer driver installed and no `\spool` directory, so
   `SplEnumQueue` correctly reports zero queues and the code stops at its honest-failure message.
   The queue-discovery path and that message are verified; **`DevOpenDC` onwards has never run.**
+
+- **Every fix from the 2026-08-02 audit.** Static verification only: the app files type-check
+  against the emx headers, `JoinPath` and the `lcid` eviction were exercised as standalone
+  programs, and both pre-commit checkers pass — but **nothing has been rebuilt on the guest or
+  watched on screen**, and `PlatPM.cxx` has not been compiled at all since the change. Three
+  cheap confirmations, in the order they are worth doing:
+  - Open a file with a line of 246+ characters, select it, invoke *Use Selection As Find Text*.
+    The status text should truncate; before the fix this wrote 267 bytes past `szStatus`.
+  - Save a file whose full path is near `CCHMAXPATH` and check the title bar still ends in
+    `" - Notepad2 for OS/2"` — that is the resize, not just the bound, being right.
+  - Browse into a deep directory. A pick that cannot fit should now beep and refuse rather than
+    return a truncated path naming a different file.
 
 A status file that says "done" for something nobody has watched work is the same failure as calling
 unwritten work "blocked" — it stops the next person from checking.
