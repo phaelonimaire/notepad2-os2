@@ -210,8 +210,16 @@ Every one of these cost real time at least once, and none is catchable by the co
 - ~~The context menu~~ **Done** — commit `7c74970`. `AddToPopUp` builds it with `MM_INSERTITEM`,
   `WM_BUTTON2DOWN` and Shift+F10 both raise it, and choosing an item dispatches. Verified on screen
   including the per-item enabled states.
-- `ListBox` image registration is unimplemented (needs `LS_OWNERDRAW` + `WM_DRAWITEM`) — the last
-  stub in the platform layer. Autocomplete lists show text without per-item icons.
+- ~~`ListBox` image registration~~ **Done** — commit `c2f7df9`, on an owner-drawn list box. **One
+  cosmetic defect**: the icon on the *highlighted* row draws in the complement of its colour — a
+  `(191,0,0)` icon measures `(64,255,255)` there and `(191,0,0)` on every other row. Background,
+  text, icon shape and position are all correct. Ruled out by measurement: the alpha blend
+  (pre-compositing against the known background so every pixel is opaque changes nothing), the
+  selection query, and mixing colour-index with RGB drawing. Left to test: whether PM applies its own
+  emphasis inversion over an owner-drawn row.
+
+**The platform layer now has no stubs.** Every `Surface`, `Window`, `ListBox`, `Menu` and `Font`
+entry point is implemented.
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
 - Sort and alignment compare bytes, not characters; rectangular selection is refused rather than
