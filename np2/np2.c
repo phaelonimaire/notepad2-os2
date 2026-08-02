@@ -35,6 +35,7 @@
 #include "np2run.h"
 #include "np2browse.h"
 #include "np2print.h"
+#include "np2watch.h"
 #include "np2enc.h"
 #include "pmhelpers.h"
 
@@ -308,11 +309,27 @@ static BOOL PickFile(HWND hwnd, BOOL fSave, PSZ pszResult)
 
 static BOOL LoadFile(HWND hwnd, PSZ pszFile)
 {
+    /* "Reset if a new file is opened" (np2watch.c) has to distinguish opening a
+     * different document from re-reading the same one, which is what Notepad2
+     * passes bReload for. Comparing the paths answers it without threading a
+     * flag through nine call sites: the reload paths pass szFileName itself,
+     * already fully qualified, and a caller that names the current file by its
+     * qualified path really is re-reading it. */
+    BOOL    bReload = (szFileName[0] != '\0' &&
+                       strcasecmp((const char *)pszFile, szFileName) == 0);
     HFILE   hf = NULLHANDLE;
     ULONG   ulAction = 0, cbRead = 0, cbFile = 0;
     APIRET  rc;
     FILESTATUS3 fs3;
     char   *pBuf;
+
+    /* The summary written at the end of this function is only filled in when
+     * szStatus is empty, so that an error reported on the way through is not
+     * overwritten by it. That means szStatus MUST start empty, or every load
+     * after the first keeps the first one's byte count in the title. Several
+     * callers used to clear it themselves; doing it here covers the ones that
+     * did not, including the reload behind change notification. */
+    szStatus[0] = '\0';
 
     rc = DosOpen(pszFile, &hf, &ulAction, 0, FILE_NORMAL,
                  OPEN_ACTION_OPEN_IF_EXISTS,
@@ -396,6 +413,8 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     if (!szStatus[0])
         sprintf(szStatus, "%lu bytes  [%s]  %s",
                 (unsigned long)cbRead, Style_Name(iScheme), EncName(iEncoding));
+
+    FileWatchOnNewFile(hwnd, szFileName, bReload);
     return TRUE;
 }
 
@@ -585,6 +604,10 @@ static void LoadSettings(void)
     bAlwaysOnTop        = IniGetInt(SEC_VIEW, "AlwaysOnTop", bAlwaysOnTop);
     bAutoCloseTags      = IniGetInt(SEC_VIEW, "AutoCloseTags", bAutoCloseTags);
 
+    /* Notepad2's own key names and numbering, so an .ini is readable by both. */
+    FileWatchSetOptions(IniGetInt(SEC_SET, "FileWatchingMode", FILEWATCH_NONE),
+                        IniGetInt(SEC_SET, "ResetFileWatching", TRUE) ? TRUE : FALSE);
+
     swpSaved.x  = IniGetInt(SEC_WIN, "X",  -1);
     swpSaved.y  = IniGetInt(SEC_WIN, "Y",  -1);
     swpSaved.cx = IniGetInt(SEC_WIN, "CX", -1);
@@ -661,6 +684,8 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteStr("FontFace",            szFontFace);
     IniWriteStr("BrowseDir",           szBrowseDir);
     IniWriteInt("FontSize",            iFontSize);
+    IniWriteInt("FileWatchingMode",    FileWatchMode());
+    IniWriteInt("ResetFileWatching",   FileWatchResetOnNewFile());
 
     IniWriteSection(SEC_VIEW);
     IniWriteInt("WordWrap",                  bWordWrap);
@@ -861,6 +886,12 @@ static void SyncMenu(HWND hwndFrame)
     WinSendMsg(hwndMenu, MM_SETITEMATTR,
                MPFROM2SHORT(IDM_LINENUMBERS, TRUE),
                MPFROM2SHORT(MIA_CHECKED, bLineNumbers ? MIA_CHECKED : 0));
+    /* Not a BOOL toggle - three modes, checked whenever watching is on, which
+     * is how Notepad2 shows it (CheckCmd with iFileWatchingMode). */
+    WinSendMsg(hwndMenu, MM_SETITEMATTR,
+               MPFROM2SHORT(IDM_CHANGENOTIFY, TRUE),
+               MPFROM2SHORT(MIA_CHECKED,
+                            FileWatchMode() != FILEWATCH_NONE ? MIA_CHECKED : 0));
     {
         static const struct { USHORT id; const BOOL *pf; } aChecks[] = {
             { IDM_LONGLINEMARKER, &bLongLineMarker },
@@ -1088,6 +1119,76 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     /* Esc reaches the client because the editor passes keys it does not use
      * to WinDefWindowProc, which forwards them to the owner - the contract in
      * os2ref/pm-window-messaging.md that also makes the menu mnemonics work. */
+    case WM_TIMER:
+        if (SHORT1FROMMP(mp1) == IDT_WATCH)
+            FileWatchTick(hwnd);
+        break;
+
+    case WM_CHANGENOTIFY: {
+        /* Notepad2 preserves the caret, the selection and the scroll position
+         * across the reload, and jumps to the end instead when the caret was
+         * already there and the reload was automatic - that is what makes
+         * auto-reload usable for watching a log file grow. */
+        LONG lCurPos    = LONGFROMMR(Sci(SCI_GETCURRENTPOS, 0, 0));
+        LONG lAnchor    = LONGFROMMR(Sci(SCI_GETANCHOR, 0, 0));
+        LONG lVisTop    = LONGFROMMR(Sci(SCI_GETFIRSTVISIBLELINE, 0, 0));
+        LONG lDocTop    = LONGFROMMR(Sci(SCI_DOCLINEFROMVISIBLE, MPFROMLONG(lVisTop), 0));
+        LONG lXOffset   = LONGFROMMR(Sci(SCI_GETXOFFSET, 0, 0));
+        LONG lLength    = LONGFROMMR(Sci(SCI_GETLENGTH, 0, 0));
+        BOOL bIsTail    = (lCurPos == lAnchor) && (lCurPos == lLength);
+        BOOL bModified  = LONGFROMMR(Sci(SCI_GETMODIFY, 0, 0)) ? TRUE : FALSE;
+        FILESTATUS3 fs3;
+        BOOL bExists = (DosQueryPathInfo((PSZ)szFileName, FIL_STANDARD,
+                                         &fs3, sizeof(fs3)) == NO_ERROR);
+
+        if (!bExists) {
+            if (WinMessageBox(HWND_DESKTOP, hwnd,
+                    (PSZ)"The current file has been deleted. Save now?",
+                    (PSZ)"Notepad2 for OS/2", 0,
+                    MB_YESNO | MB_ICONQUESTION | MB_MOVEABLE) == MBID_YES)
+                WinPostMsg(hwnd, WM_COMMAND, MPFROMSHORT(IDM_SAVE), 0);
+            FileWatchInstall(hwnd, szFileName);
+            break;
+        }
+
+        /* Auto-reload only applies to an unmodified document - otherwise the
+         * user's unsaved work would be discarded without being asked. */
+        if (FileWatchMode() == FILEWATCH_AUTORELOAD && !bModified) {
+            /* fall through to the reload */
+        } else {
+            WinSetActiveWindow(HWND_DESKTOP, WinQueryWindow(hwnd, QW_PARENT));
+            if (WinMessageBox(HWND_DESKTOP, hwnd,
+                    (PSZ)"The current file has been modified by an external "
+                         "program. Reload?",
+                    (PSZ)"Notepad2 for OS/2", 0,
+                    MB_YESNO | MB_ICONQUESTION | MB_MOVEABLE) != MBID_YES) {
+                FileWatchInstall(hwnd, szFileName);
+                break;
+            }
+        }
+
+        if (LoadFile(hwnd, (PSZ)szFileName)) {
+            if (bIsTail && FileWatchMode() == FILEWATCH_AUTORELOAD) {
+                LONG lNew = LONGFROMMR(Sci(SCI_GETLENGTH, 0, 0));
+                Sci(SCI_SETSEL, MPFROMLONG(lNew), MPFROMLONG(lNew));
+                Sci(SCI_SCROLLCARET, 0, 0);
+            } else {
+                LONG lNewTop;
+                Sci(SCI_SETSEL, MPFROMLONG(lAnchor), MPFROMLONG(lCurPos));
+                Sci(SCI_ENSUREVISIBLE, MPFROMLONG(lDocTop), 0);
+                lNewTop = LONGFROMMR(Sci(SCI_GETFIRSTVISIBLELINE, 0, 0));
+                Sci(SCI_LINESCROLL, 0, MPFROMLONG(lVisTop - lNewTop));
+                Sci(SCI_SETXOFFSET, MPFROMLONG(lXOffset), 0);
+            }
+            UpdateStatusbar();
+            ShowStatus();
+        }
+        /* Re-arm: this is also what re-stamps the file, so it must run on
+         * every path out of here, including the ones that declined. */
+        FileWatchInstall(hwnd, szFileName);
+        break;
+    }
+
     case WM_CHAR:
         if (iEscFunction != 0 &&
             (SHORT1FROMMP(mp1) & KC_VIRTUALKEY) &&
@@ -1377,6 +1478,15 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_CHANGENOTIFY:
+            /* The dialog edits the mode; re-installing is what starts or stops
+             * the timer, so it must run whether or not the mode changed. */
+            if (ChangeNotifyDlg(hwnd)) {
+                FileWatchInstall(hwnd, szFileName);
+                SyncMenu(hwndFrame);
+            }
+            break;
+
         case IDM_TOOLBAR: {
             RECTL rcl;
             bToolbar = !bToolbar;

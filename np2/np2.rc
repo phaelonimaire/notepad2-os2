@@ -184,7 +184,7 @@ BEGIN
         MENUITEM "~Word Wrap",             IDM_WORDWRAP
         MENUITEM "~Long Line Marker",      IDM_LONGLINEMARKER
         MENUITEM "Indentation ~Guides",    IDM_INDENTGUIDES
-        MENUITEM "Show W~hitespace",       IDM_SHOWWHITESPACE
+        MENUITEM "~Show Whitespace",       IDM_SHOWWHITESPACE
         MENUITEM "Show Line ~Endings",     IDM_SHOWEOLS
         MENUITEM "Highlight C~urrent Line", IDM_HILITECURLINE
         SUBMENU "Mar~k Occurrences", IDM_MARKOCC_MENU
@@ -208,6 +208,8 @@ BEGIN
         MENUITEM "Zoom ~In\tCtrl+Plus",   IDM_ZOOMIN
         MENUITEM "Zoom ~Out\tCtrl+Minus", IDM_ZOOMOUT
         MENUITEM "~Reset Zoom",            IDM_RESETZOOM
+        MENUITEM SEPARATOR
+        MENUITEM "File C~hange Notification...\tAlt+F5", IDM_CHANGENOTIFY
     END
     SUBMENU "Se~ttings", IDM_SETTINGS
     BEGIN
@@ -463,6 +465,21 @@ BEGIN
     END
 END
 
+DLGTEMPLATE IDD_CHANGENOTIFY
+BEGIN
+    DIALOG "File Change Notification", IDD_CHANGENOTIFY, 20, 20, 252, 110, , FCF_TITLEBAR | FCF_SYSMENU
+    BEGIN
+        AUTORADIOBUTTON "~None.",                       IDC_WATCH_NONE,   8, 86, 170, 10, WS_GROUP | WS_TABSTOP
+        AUTORADIOBUTTON "~Display message.",            IDC_WATCH_MSGBOX, 8, 72, 170, 10
+        AUTORADIOBUTTON "~Auto-reload (unmodified).",   IDC_WATCH_AUTO,   8, 58, 170, 10
+
+        AUTOCHECKBOX    "~Reset if a new file is opened.", IDC_WATCH_RESET, 8, 36, 170, 10, WS_GROUP | WS_TABSTOP
+
+        DEFPUSHBUTTON "OK",     DID_OK,     192, 84, 52, 14
+        PUSHBUTTON    "Cancel", DID_CANCEL, 192, 66, 52, 14
+    END
+END
+
 DLGTEMPLATE IDD_BROWSE
 BEGIN
     DIALOG "Browse", IDD_BROWSE, 20, 20, 360, 220, , FCF_TITLEBAR | FCF_SYSMENU
@@ -583,6 +600,7 @@ BEGIN
        convention Notepad2 uses and OS/2 editors share. */
     VK_F3, IDM_FINDNEXT, VIRTUALKEY
     VK_F3, IDM_FINDPREV, VIRTUALKEY, SHIFT
+    VK_F5, IDM_CHANGENOTIFY, VIRTUALKEY, ALT
 
     /* The traditional OS/2 CUA editing keys. IBM documents these for entry fields and
        MLEs [DOC-IBM - pmv2base.txt]: Ctrl+Insert copies, Shift+Insert pastes,

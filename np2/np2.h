@@ -304,6 +304,16 @@
 #define IDC_BROWSECNR       830
 #define IDC_BROWSEPATH      831
 
+/* File change notification. The three IDC_WATCH_* mode buttons MUST stay
+ * contiguous and in FILEWATCH_* order - np2watch.c indexes them as
+ * IDC_WATCH_NONE + mode. */
+#define IDM_CHANGENOTIFY    433
+#define IDD_CHANGENOTIFY    565
+#define IDC_WATCH_NONE      840
+#define IDC_WATCH_MSGBOX    841
+#define IDC_WATCH_AUTO      842
+#define IDC_WATCH_RESET     843
+
 /* Printing */
 #define IDM_PRINT           414
 #define IDM_PAGESETUP       415
