@@ -1337,16 +1337,38 @@ class ListBoxImpl : public ListBox {
 	int desiredVisibleRows;
 	int aveCharWidth;
 	bool unicodeMode;
+	int technology;
 	CallBackAction doubleClickAction;
 	void *doubleClickActionData;
+	RGBAImageSet images;      // registered per-type icons
+	std::vector<int> itemTypes;   // parallel to the list box's items
+
+	// Gap between the icon and the text, and the inset at the left edge.
+	enum { imageGap = 2, leftInset = 2 };
+	int ImageWidth() const {
+		return const_cast<RGBAImageSet &>(images).GetWidth();
+	}
+	int ItemHeight() const {
+		const int ih = const_cast<RGBAImageSet &>(images).GetHeight();
+		return (ih > lineHeight) ? ih : lineHeight;
+	}
+	void ApplyItemHeight() {
+		if (wid)
+			WinSendMsg(reinterpret_cast<HWND>(wid), LM_SETITEMHEIGHT,
+				MPFROMLONG(ItemHeight()), 0);
+	}
 
 public:
 	ListBoxImpl()
 		: lineHeight(10), desiredVisibleRows(5), aveCharWidth(8), unicodeMode(false),
+		  technology(0),
 		  doubleClickAction(nullptr), doubleClickActionData(nullptr) {
 	}
-	~ListBoxImpl() override {
-	}
+	~ListBoxImpl() override;
+
+	// Called from the owner's WM_DRAWITEM. Returns true when this list drew the
+	// item, which is what the list box control takes as "do not draw it yourself".
+	bool DrawItem(POWNERITEM poi);
 
 	void SetFont(Font &font) override;
 	void Create(Window &parent, int ctrlID, Point location, int lineHeight_,
@@ -1375,10 +1397,23 @@ ListBox *ListBox::Allocate() {
 	return new ListBoxImpl();
 }
 
+// Only one autocomplete list exists at a time, so the owner's WM_DRAWITEM can be
+// routed to it through a file-static pointer rather than by threading a back-pointer
+// through Scintilla's platform-independent ListBox interface, which has nowhere to
+// put one.
+static ListBoxImpl *activeListBox = nullptr;
+
+ListBoxImpl::~ListBoxImpl() {
+	if (activeListBox == this)
+		activeListBox = nullptr;
+}
+
 void ListBoxImpl::Create(Window &parent, int ctrlID, Point, int lineHeight_,
-		bool unicodeMode_, int) {
+		bool unicodeMode_, int technology_) {
 	lineHeight = lineHeight_;
 	unicodeMode = unicodeMode_;
+	technology = technology_;
+	activeListBox = this;
 	// The popup must be able to overhang the editor window, so it is a child of the
 	// desktop rather than of the editor. It starts hidden; Scintilla positions and shows
 	// it via Window::SetPositionRelative + Show.
@@ -1387,15 +1422,16 @@ void ListBoxImpl::Create(Window &parent, int ctrlID, Point, int lineHeight_,
 		HWND_DESKTOP,                       // parent: desktop, so it can overlap
 		WC_LISTBOX,
 		(PSZ)"",
-		WS_CLIPSIBLINGS | LS_NOADJUSTPOS,   // not WS_VISIBLE: shown on demand
+		// LS_OWNERDRAW: the control draws text-only items itself and inverts the
+		// selected one, which cannot show a per-item icon [DOC-IBM - pm3.txt,
+		// WM_DRAWITEM (in List Boxes) Remarks]. Owner-draw is the only route.
+		WS_CLIPSIBLINGS | LS_NOADJUSTPOS | LS_OWNERDRAW,  // not WS_VISIBLE: shown on demand
 		0, 0, 0, 0,
 		hwndParent,                         // owner: notifications go to the editor
 		HWND_TOP,
 		static_cast<ULONG>(ctrlID),
 		nullptr, nullptr));
-	if (wid && lineHeight > 0)
-		WinSendMsg(reinterpret_cast<HWND>(wid), LM_SETITEMHEIGHT,
-			MPFROMLONG(lineHeight), 0);
+	ApplyItemHeight();
 }
 
 void ListBoxImpl::SetFont(Font &font) {
@@ -1425,27 +1461,33 @@ int ListBoxImpl::GetVisibleRows() const {
 
 PRectangle ListBoxImpl::GetDesiredRect() {
 	const int rows = (Length() < desiredVisibleRows) ? Length() : desiredVisibleRows;
-	const int h = (rows > 0 ? rows : 1) * lineHeight + 4;
+	const int h = (rows > 0 ? rows : 1) * ItemHeight() + 4;
+	const int iconColumn = ImageWidth() ? (ImageWidth() + imageGap) : 0;
 	return PRectangle(0, 0,
-		static_cast<XYPOSITION>(aveCharWidth * 30),
+		static_cast<XYPOSITION>(aveCharWidth * 30 + iconColumn),
 		static_cast<XYPOSITION>(h));
 }
 
+// Where the text starts, so Scintilla can line the list up under the caret.
 int ListBoxImpl::CaretFromEdge() {
-	return 4;
+	return leftInset + (ImageWidth() ? (ImageWidth() + imageGap) : 0) + 2;
 }
 
 void ListBoxImpl::Clear() {
 	if (wid)
 		WinSendMsg(reinterpret_cast<HWND>(wid), LM_DELETEALL, 0, 0);
+	itemTypes.clear();
 }
 
 // LM_INSERTITEM: mp1 = sItemIndex (LIT_END appends), mp2 = pszItemText [DOC-IBM - pm3.txt].
 void ListBoxImpl::Append(char *s, int type) {
-	(void)type;   // per-item images are not implemented - see RegisterImage below
-	if (wid && s)
-		WinSendMsg(reinterpret_cast<HWND>(wid), LM_INSERTITEM,
-			MPFROMSHORT(LIT_END), MPFROMP(s));
+	if (!wid || !s)
+		return;
+	// The control stores only the text, so the type rides alongside in a parallel
+	// vector indexed the same way. LIT_END appends, so the indices stay in step.
+	WinSendMsg(reinterpret_cast<HWND>(wid), LM_INSERTITEM,
+		MPFROMSHORT(LIT_END), MPFROMP(s));
+	itemTypes.push_back(type);
 }
 
 int ListBoxImpl::Length() {
@@ -1530,16 +1572,120 @@ void ListBoxImpl::SetList(const char *list, char separator, char typesep) {
 // exists these record nothing rather than pretending an image was registered; the list
 // still shows correct text, just without type icons.
 
+// Scintilla parses the XPM itself, and RGBAImage converts it to the same RGBA form
+// RegisterRGBAImage supplies - so both paths end in one image set and one draw call.
 void ListBoxImpl::RegisterImage(int type, const char *xpm_data) {
-	(void)type; (void)xpm_data;
+	if (!xpm_data)
+		return;
+	XPM xpm(xpm_data);
+	images.Add(type, new RGBAImage(xpm));
+	ApplyItemHeight();
 }
 
 void ListBoxImpl::RegisterRGBAImage(int type, int width, int height,
 		const unsigned char *pixelsImage) {
-	(void)type; (void)width; (void)height; (void)pixelsImage;
+	if (!pixelsImage || width <= 0 || height <= 0)
+		return;
+	images.Add(type, new RGBAImage(width, height, 1.0f, pixelsImage));
+	ApplyItemHeight();
 }
 
 void ListBoxImpl::ClearRegisteredImages() {
+	images.Clear();
+	ApplyItemHeight();
+}
+
+// Draw one item: background, icon, text. Called from the owner's WM_DRAWITEM.
+//
+// The background and text go through WinDrawText/WinFillRect with SYSCLR_* colour
+// INDICES, which is what the owner-draw HPS is set up for. The icon then goes
+// through a Scintilla Surface, and that switches the HPS to RGB mode
+// (LCOLF_RGB) - so it has to be drawn LAST, or every colour index used after it
+// means something else.
+bool ListBoxImpl::DrawItem(POWNERITEM poi) {
+	if (!poi || !wid || poi->hwnd != reinterpret_cast<HWND>(wid))
+		return false;
+
+	// Selection comes from fsState, NOT from LM_QUERYSELECTION: during WM_DRAWITEM
+	// the control has not committed the selection yet and LM_QUERYSELECTION answers
+	// LIT_NONE for every item, including the one being drawn as selected (measured).
+	// os2emx.h defines no LIA_* constant for this bit; observed as 1.
+	const ULONG stateSelected = 0x1;
+	const bool selected = (poi->fsState & stateSelected) != 0;
+
+	const LONG rgbBack = WinQuerySysColor(HWND_DESKTOP,
+		selected ? SYSCLR_HILITEBACKGROUND : SYSCLR_WINDOW, 0);
+	const LONG rgbFore = WinQuerySysColor(HWND_DESKTOP,
+		selected ? SYSCLR_HILITEFOREGROUND : SYSCLR_WINDOWTEXT, 0);
+
+	// EVERYTHING here draws in RGB mode. Surface::Init puts the presentation space
+	// into LCOLF_RGB, and mixing that with colour-INDEX drawing (WinFillRect with a
+	// SYSCLR_* index, say) in the same item corrupts the later blit: a (191,0,0)
+	// icon came out (64,255,255) - its exact complement - on the one row whose
+	// background had been filled by index, and correct on every other row.
+	std::unique_ptr<Surface> surface(Surface::Allocate(technology));
+	if (!surface)
+		return false;
+	surface->Init(reinterpret_cast<SurfaceID>(poi->hps),
+		reinterpret_cast<WindowID>(wid));
+
+	RECTL rclWin;
+	WinQueryWindowRect(reinterpret_cast<HWND>(wid), &rclWin);
+	const LONG winH = rclWin.yTop - rclWin.yBottom;
+	// rclItem is PM (y-up); the surface draws y-down against this window.
+	const PRectangle rcItem(
+		static_cast<XYPOSITION>(poi->rclItem.xLeft),
+		static_cast<XYPOSITION>(winH - poi->rclItem.yTop),
+		static_cast<XYPOSITION>(poi->rclItem.xRight),
+		static_cast<XYPOSITION>(winH - poi->rclItem.yBottom));
+
+	// WinQuerySysColor answers 0x00RRGGBB.
+	const ColourDesired back(static_cast<unsigned int>((rgbBack >> 16) & 0xff),
+		static_cast<unsigned int>((rgbBack >> 8) & 0xff),
+		static_cast<unsigned int>(rgbBack & 0xff));
+	surface->FillRectangle(rcItem, back);
+
+	const int iconColumn = ImageWidth() ? (ImageWidth() + imageGap) : 0;
+
+	char text[512] = "";
+	WinSendMsg(poi->hwnd, LM_QUERYITEMTEXT,
+		MPFROM2SHORT(static_cast<SHORT>(poi->idItem),
+			static_cast<SHORT>(sizeof(text))),
+		MPFROMP(text));
+
+	// The presentation space is in RGB mode, so WinDrawText takes RGB values here
+	// rather than colour indices.
+	RECTL rclText = poi->rclItem;
+	rclText.xLeft += leftInset + iconColumn;
+	WinDrawText(poi->hps, -1, AsPCH(text), &rclText, rgbFore, rgbBack,
+		DT_LEFT | DT_VCENTER | DT_TEXTATTRS);
+
+	const int type = (poi->idItem >= 0 &&
+		static_cast<size_t>(poi->idItem) < itemTypes.size())
+		? itemTypes[static_cast<size_t>(poi->idItem)] : -1;
+	RGBAImage *image = (type >= 0) ? images.Get(type) : nullptr;
+	if (image) {
+		const LONG itemH = poi->rclItem.yTop - poi->rclItem.yBottom;
+		const int iw = image->GetWidth();
+		const int ih = image->GetHeight();
+		const XYPOSITION top = static_cast<XYPOSITION>(
+			(winH - poi->rclItem.yTop) + (itemH - ih) / 2);
+		const XYPOSITION left = static_cast<XYPOSITION>(
+			poi->rclItem.xLeft + leftInset);
+		surface->DrawRGBAImage(PRectangle(left, top, left + iw, top + ih),
+			iw, ih, image->Pixels());
+	}
+
+	surface->Release();
+	return true;
+}
+
+// The owner receives WM_DRAWITEM; this is how it reaches the list box that asked
+// for it. Declared in ScintillaPM.cxx.
+extern "C" int ScintillaPM_ListBoxDrawItem(void *pOwnerItem) {
+	if (!activeListBox)
+		return 0;
+	return activeListBox->DrawItem(static_cast<POWNERITEM>(pOwnerItem)) ? 1 : 0;
 }
 
 // ---------------------------------------------------------------------------

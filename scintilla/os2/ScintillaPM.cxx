@@ -91,6 +91,9 @@
 using namespace Scintilla;
 #endif
 
+// Implemented in PlatPM.cxx: routes the owner's WM_DRAWITEM to the active ListBox.
+extern "C" int ScintillaPM_ListBoxDrawItem(void *pOwnerItem);
+
 const char *const scintillaPMClassName = "Scintilla";
 const char *const scintillaPMCallTipClassName = "ScintillaPMCallTip";
 
@@ -681,6 +684,13 @@ MRESULT ScintillaPM::WndProc(ULONG msg, MPARAM mp1, MPARAM mp2) {
 		WinSetFocus(HWND_DESKTOP, hwnd);
 		ButtonDownWithModifiers(PtFromMsg(mp1), 0, CurrentModifiers());
 		return MRFROMLONG(TRUE);
+
+	case WM_DRAWITEM:
+		// The autocomplete list is LS_OWNERDRAW, and a list box sends WM_DRAWITEM to
+		// its OWNER - which is this window. Returning TRUE means "the owner drew it";
+		// FALSE lets the control draw the item itself, which is the right answer for
+		// anything that is not our list [DOC-IBM - pm3.txt, WM_DRAWITEM in List Boxes].
+		return MRFROMLONG(ScintillaPM_ListBoxDrawItem(PVOIDFROMMP(mp2)) ? TRUE : FALSE);
 
 	case SCPM_SHOWCONTEXTMENU:
 		ShowContextMenuAtCaret();
