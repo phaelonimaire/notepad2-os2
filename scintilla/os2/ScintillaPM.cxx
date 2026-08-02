@@ -92,6 +92,7 @@ using namespace Scintilla;
 #endif
 
 const char *const scintillaPMClassName = "Scintilla";
+const char *const scintillaPMCallTipClassName = "ScintillaPMCallTip";
 
 // Timer ids must be <= TID_USERMAX (0x7fff) [DOC-IBM - pm-window-messaging.md 10].
 enum { tickerIdBase = 100 };
@@ -149,6 +150,7 @@ public:
 
 	static void Register(HAB hab_);
 	static MRESULT EXPENTRY SciWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2);
+	static MRESULT EXPENTRY CallTipWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2);
 	enum { SCPM_SHOWCONTEXTMENU = WM_USER + 0x123 };
 	// ContextMenu() is protected in ScintillaBase; this is the one thing the
 	// application needs to reach from outside.
@@ -505,10 +507,78 @@ void ScintillaPM::FineTickerCancel(TickReason reason) {
 // Not yet implemented - these stop rather than pretend.
 // ---------------------------------------------------------------------------
 
+// A call tip is a small window that has to overhang the editor, so like the
+// autocomplete list it is a child of the DESKTOP owned by the editor. It is created
+// hidden and without WS_VISIBLE: ScintillaBase positions it with
+// Window::SetPositionRelative and then calls Show().
+//
+// It must never take the focus - typing has to keep going to the editor while a tip
+// is up - and PM obliges, because a window only receives the focus when something
+// calls WinSetFocus for it.
 void ScintillaPM::CreateCallTipWindow(PRectangle) {
-	// TODO: a WS_VISIBLE popup window painting through the same Surface. Leaving
-	// ct.wCallTip uncreated means call tips simply do not appear, which is visible and
-	// harmless; a half-made window would crash inside CallTip::PaintCT.
+	if (ct.wCallTip.Created())
+		return;
+	HWND hwndCT = WinCreateWindow(
+		HWND_DESKTOP,                   // parent: desktop, so the tip can overhang
+		(PSZ)scintillaPMCallTipClassName,
+		(PSZ)"",
+		WS_CLIPSIBLINGS,                // NOT WS_VISIBLE - shown on demand
+		0, 0, 0, 0,
+		hwnd,                           // owner: the editor
+		HWND_TOP,
+		0, nullptr, nullptr);
+	if (hwndCT == NULLHANDLE)
+		return;
+	// The instance pointer is stored after creation rather than passed through
+	// WM_CREATE, so the window procedure simply ignores anything arriving before it
+	// is set instead of decoding a CREATESTRUCT.
+	WinSetWindowPtr(hwndCT, 0, this);
+	ct.wCallTip = reinterpret_cast<WindowID>(hwndCT);
+	ct.wDraw = ct.wCallTip;
+}
+
+MRESULT EXPENTRY ScintillaPM::CallTipWndProc(HWND hwnd, ULONG msg,
+		MPARAM mp1, MPARAM mp2) {
+	ScintillaPM *sci = static_cast<ScintillaPM *>(WinQueryWindowPtr(hwnd, 0));
+	if (!sci)
+		return WinDefWindowProc(hwnd, msg, mp1, mp2);
+
+	switch (msg) {
+	case WM_PAINT: {
+		RECTL rclPaint;
+		HPS hps = WinBeginPaint(hwnd, NULLHANDLE, &rclPaint);
+		std::unique_ptr<Surface> surfaceWindow(Surface::Allocate(sci->technology));
+		if (surfaceWindow) {
+			// Init against THIS window, not the editor: the surface flips y
+			// against the window it is given, and the tip has its own height.
+			surfaceWindow->Init(reinterpret_cast<SurfaceID>(hps),
+				reinterpret_cast<WindowID>(hwnd));
+			surfaceWindow->SetUnicodeMode(sci->IsUnicodeMode());
+			surfaceWindow->SetDBCSMode(sci->ct.codePage);
+			sci->ct.PaintCT(surfaceWindow.get());
+			surfaceWindow->Release();
+		}
+		WinEndPaint(hps);
+		return 0;
+	}
+
+	case WM_BUTTON1DOWN: {
+		// The up/down arrows on a multi-page tip are hit-tested by CallTip itself.
+		RECTL rcl;
+		WinQueryWindowRect(hwnd, &rcl);
+		const LONG h = rcl.yTop - rcl.yBottom;
+		sci->ct.MouseClick(Point(
+			static_cast<XYPOSITION>(SHORT1FROMMP(mp1)),
+			static_cast<XYPOSITION>(h - SHORT2FROMMP(mp1))));
+		sci->CallTipClick();
+		return MRFROMLONG(TRUE);
+	}
+
+	case WM_DESTROY:
+		WinSetWindowPtr(hwnd, 0, nullptr);
+		break;
+	}
+	return WinDefWindowProc(hwnd, msg, mp1, mp2);
 }
 
 // Scintilla builds the context menu one item at a time between Menu::CreatePopUp and
@@ -742,6 +812,11 @@ void ScintillaPM::Register(HAB hab_) {
 	// cbWindowData = sizeof(void *) reserves the per-window slot used above.
 	WinRegisterClass(hab_, (PSZ)scintillaPMClassName, ScintillaPM::SciWndProc,
 		CS_SIZEREDRAW | CS_CLIPCHILDREN, sizeof(void *));
+	// CS_SAVEBITS: the tip is a transient overlay, so let PM restore what was under
+	// it rather than forcing the editor to repaint on every dismissal.
+	WinRegisterClass(hab_, (PSZ)scintillaPMCallTipClassName,
+		ScintillaPM::CallTipWndProc,
+		CS_SIZEREDRAW | CS_SAVEBITS, sizeof(void *));
 }
 
 // The keyboard route to the context menu has to come from the FRAME, not from here:
