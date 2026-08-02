@@ -245,6 +245,7 @@ BEGIN
         MENUITEM "Stic~ky Window Position",  IDM_STICKYWINPOS
         MENUITEM "Reuse Window (~Hand Off Files)", IDM_REUSEWINDOW
         MENUITEM "Single File Instance", IDM_SINGLEFILEINST
+        MENUITEM "Save Before Running Tools", IDM_SAVEBEFORERUN
         MENUITEM SEPARATOR
         SUBMENU "Window Title ~Display", IDM_TITLE_MENU
         BEGIN
@@ -268,6 +269,7 @@ BEGIN
     SUBMENU "~Help", IDM_HELP
     BEGIN
         MENUITEM "~About Notepad2...", IDM_ABOUT
+        MENUITEM "Command ~Line Help...", IDM_CMDLINEHELP
     END
 END
 

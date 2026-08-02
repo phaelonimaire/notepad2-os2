@@ -115,6 +115,7 @@ static BOOL bStickyWindowPos    = FALSE;
 static BOOL bAutoCompleteWords  = FALSE;
 static BOOL bReuseWindow        = FALSE;
 static BOOL bSingleFileInstance = FALSE;
+static BOOL bSaveBeforeRunning  = FALSE;
 
 /* An MRU entry must be fully qualified or it only reopens from the directory
  * it was first opened in - "demo.c" from a command line is a real example.
@@ -634,6 +635,7 @@ static void LoadSettings(void)
     bAutoCompleteWords  = IniGetInt(SEC_VIEW, "AutoCompleteWords", bAutoCompleteWords);
     bReuseWindow        = IniGetInt(SEC_VIEW, "ReuseWindow", bReuseWindow);
     bSingleFileInstance = IniGetInt(SEC_VIEW, "SingleFileInstance", bSingleFileInstance);
+    bSaveBeforeRunning  = IniGetInt(SEC_VIEW, "SaveBeforeRunningTools", bSaveBeforeRunning);
 
     /* Notepad2's own key names and numbering, so an .ini is readable by both. */
     FileWatchSetOptions(IniGetInt(SEC_SET, "FileWatchingMode", FILEWATCH_NONE),
@@ -747,6 +749,7 @@ static void SaveSettings(HWND hwndFrame)
     IniWriteInt("AutoCompleteWords",         bAutoCompleteWords);
     IniWriteInt("ReuseWindow",               bReuseWindow);
     IniWriteInt("SingleFileInstance",        bSingleFileInstance);
+    IniWriteInt("SaveBeforeRunningTools",    bSaveBeforeRunning);
 
     /* Read the frame's position back rather than tracking it: WinQueryWindowPos
      * fills an SWP whose field order is (fl, cy, cx, y, x) - reversed from
@@ -954,6 +957,7 @@ static void SyncMenu(HWND hwndFrame)
             { IDM_AUTOCOMPWORDS,  &bAutoCompleteWords  },
             { IDM_REUSEWINDOW,    &bReuseWindow        },
             { IDM_SINGLEFILEINST, &bSingleFileInstance },
+            { IDM_SAVEBEFORERUN,  &bSaveBeforeRunning  },
             { IDM_TABSASSPACES,   &settings.bTabsAsSpaces },
             { 0, NULL }
         };
@@ -1570,6 +1574,25 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         /* --- View toggles -------------------------------------------------- */
+        case IDM_CMDLINEHELP:
+            /* Describes what THIS program accepts, not what Notepad2 does:
+             * claiming options the port has never implemented would be worse
+             * than having no help at all. */
+            /* WinMessageBox honours "\n"; a WC_STATIC does not - it draws the
+             * byte as a glyph and runs the text on. It also word-wraps, so
+             * column alignment here would be undone anyway. */
+            WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)
+                "Usage:  np2.exe [file]\n\n"
+                "file - a text file to open at startup. A relative path is "
+                "resolved against the current directory.\n\n"
+                "Settings live in np2.ini beside the program, not in OS2.INI. "
+                "Two of them change what a second launch does:\n\n"
+                "Reuse Window - hands the file to a running instance.\n\n"
+                "Single File Instance - raises the instance already holding "
+                "that file.",
+                (PSZ)"Command Line Help", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
+            break;
+
         case IDM_COLUMNWRAP: {
             /* Defaults to the long-line limit, which is the column the user has
              * already said they care about. */
@@ -1616,6 +1639,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         case IDM_AUTOCOMPWORDS: bAutoCompleteWords  = !bAutoCompleteWords;  SyncMenu(hwndFrame); break;
         case IDM_REUSEWINDOW:   bReuseWindow        = !bReuseWindow;        SyncMenu(hwndFrame); break;
         case IDM_SINGLEFILEINST: bSingleFileInstance = !bSingleFileInstance; SyncMenu(hwndFrame); break;
+        case IDM_SAVEBEFORERUN:  bSaveBeforeRunning  = !bSaveBeforeRunning;  SyncMenu(hwndFrame); break;
 
         case IDM_SELTONEXT:
         case IDM_SELTOPREV:
@@ -1773,9 +1797,15 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             RunProgram(hwnd, szExePath, NULL, TRUE);
             break;
         case IDM_EXECDOC:
+            /* The other program reads the file from disk, so an unsaved buffer
+             * would run the previous version. */
+            if (bSaveBeforeRunning && LONGFROMMR(Sci(SCI_GETMODIFY, 0, 0)))
+                DoSave(hwnd, FALSE);
             RunOpenDocument(hwnd, szFileName);
             break;
         case IDM_RUNCMD:
+            if (bSaveBeforeRunning && LONGFROMMR(Sci(SCI_GETMODIFY, 0, 0)))
+                DoSave(hwnd, FALSE);
             if (RunCommandDlg(hwnd, szRunCmd, sizeof(szRunCmd)) && szRunCmd[0]) {
                 /* Split the command from its arguments at the first blank -
                  * DosStartSession takes them separately, unlike a shell. */
