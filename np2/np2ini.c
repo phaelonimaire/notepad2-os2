@@ -205,24 +205,28 @@ BOOL IniBeginWrite(const char *pszPath)
     return TRUE;
 }
 
+/* These take arbitrary caller strings - the longest today is a saved find/replace
+ * pattern at NP2_FINDTEXT_MAX (512), which sz[600] happens to survive but only
+ * just. Bounded so that a future longer value truncates the settings file rather
+ * than corrupting the stack. */
 void IniWriteSection(const char *pszSection)
 {
     char sz[128];
-    sprintf(sz, "\r\n[%s]\r\n", pszSection);
+    snprintf(sz, sizeof(sz), "\r\n[%s]\r\n", pszSection);
     IniPut(sz);
 }
 
 void IniWriteInt(const char *pszKey, int iValue)
 {
     char sz[160];
-    sprintf(sz, "%s=%d\r\n", pszKey, iValue);
+    snprintf(sz, sizeof(sz), "%s=%d\r\n", pszKey, iValue);
     IniPut(sz);
 }
 
 void IniWriteStr(const char *pszKey, const char *pszValue)
 {
-    char sz[600];
-    sprintf(sz, "%s=%s\r\n", pszKey, pszValue ? pszValue : "");
+    char sz[700];
+    snprintf(sz, sizeof(sz), "%s=%s\r\n", pszKey, pszValue ? pszValue : "");
     IniPut(sz);
 }
 

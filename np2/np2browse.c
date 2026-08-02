@@ -52,6 +52,24 @@ typedef struct _BROWSEARG {
 
 static BROWSEARG *pbaCur;
 
+/* Join a directory and a leaf into pszOut, supplying the separator only when
+ * the directory lacks one.
+ *
+ * This was open-coded at four sites as sprintf(... pszDir[strlen(pszDir)-1] ...),
+ * which indexes [-1] on an empty directory and, more seriously, could not be
+ * bounded: a CCHMAXPATH directory plus a CCHMAXPATHCOMP leaf is ~515 bytes and
+ * every destination was CCHMAXPATH. Both problems belong in one place.
+ * Returns FALSE if the result did not fit. */
+static BOOL JoinPath(char *pszOut, int cchOut, const char *pszDir,
+                     const char *pszLeaf)
+{
+    const size_t cchDir = strlen(pszDir);
+    const BOOL   bSep   = (cchDir > 0 && pszDir[cchDir - 1] != '\\');
+    const int    n      = snprintf(pszOut, (size_t)cchOut, "%s%s%s",
+                                   pszDir, bSep ? "\\" : "", pszLeaf);
+    return (BOOL)(n >= 0 && n < cchOut);
+}
+
 /*--------------------------------------------------------------------------
  * Filling the container
  *------------------------------------------------------------------------*/
@@ -111,6 +129,7 @@ static void BrowseFill(HWND hwnd, const char *pszDir)
     ULONG   cFind = 1;
     FILEFINDBUF3 ffb;
     APIRET  rc;
+    BOOL    bFound;
 
     if (hwndCnr == NULLHANDLE)
         return;
@@ -125,32 +144,42 @@ static void BrowseFill(HWND hwnd, const char *pszDir)
             BrowseInsert(hwndCnr, prec, "..", TRUE, NULL);
     }
 
-    sprintf(szMask, "%s%s*", pszDir,
-            (pszDir[0] && pszDir[strlen(pszDir) - 1] == '\\') ? "" : "\\");
+    if (!JoinPath(szMask, sizeof(szMask), pszDir, "*"))
+        return;
 
     /* FILE_DIRECTORY in the attribute mask means "directories AS WELL",
-     * not "directories only" [os2ref/file-io.md, DosFindFirst]. */
+     * not "directories only" [os2ref/file-io.md, DosFindFirst].
+     *
+     * FILEFINDBUF3 is the right record for FIL_STANDARD: the struct suffix is
+     * the API generation, not the info level (FIL_STANDARD is 1, and level 3 is
+     * FIL_QUERYEASFROMLIST). Confirmed against bsedos.h and against klibc, which
+     * pairs FIL_STANDARD with PFILEFINDBUF3 in fs.c. */
     rc = DosFindFirst((PSZ)szMask, &hdir,
                       FILE_NORMAL | FILE_DIRECTORY | FILE_READONLY | FILE_ARCHIVED,
                       &ffb, sizeof(ffb), &cFind, FIL_STANDARD);
+    bFound = (BOOL)(rc == NO_ERROR);
 
     while (rc == NO_ERROR) {
         const BOOL bDir = (ffb.attrFile & FILE_DIRECTORY) != 0;
-        if (strcmp(ffb.achName, ".") != 0 && strcmp(ffb.achName, "..") != 0) {
+        if (strcmp(ffb.achName, ".") != 0 && strcmp(ffb.achName, "..") != 0 &&
+            JoinPath(szFull, sizeof(szFull), pszDir, ffb.achName)) {
+            /* Build the path first: a record allocated and then not inserted
+             * would have to be handed back with CM_FREERECORD. */
             BROWSEREC *prec = BrowseAlloc(hwndCnr);
             if (prec) {
-                CHAR szDisplay[CCHMAXPATH];
-                sprintf(szDisplay, bDir ? "[%s]" : "%s", ffb.achName);
-                sprintf(szFull, "%s%s%s", pszDir,
-                        (pszDir[strlen(pszDir) - 1] == '\\') ? "" : "\\",
-                        ffb.achName);
+                CHAR szDisplay[CCHMAXPATH + 2];
+                snprintf(szDisplay, sizeof(szDisplay), bDir ? "[%s]" : "%s",
+                         ffb.achName);
                 BrowseInsert(hwndCnr, prec, szDisplay, bDir, szFull);
             }
         }
         cFind = 1;
         rc = DosFindNext(hdir, &ffb, sizeof(ffb), &cFind);
     }
-    DosFindClose(hdir);
+    /* Only a successful DosFindFirst leaves a handle to close; on failure hdir
+     * is still HDIR_CREATE. */
+    if (bFound)
+        DosFindClose(hdir);
 
     WinSendMsg(hwndCnr, CM_INVALIDATERECORD, NULL,
                MPFROM2SHORT(0, CMA_ERASE | CMA_REPOSITION));
@@ -180,16 +209,23 @@ static void BrowseActivate(HWND hwnd, BROWSEREC *prec)
     PlainName(prec, szName, sizeof(szName));
 
     if (!prec->bDir) {
-        sprintf(pbaCur->pszPick, "%s%s%s", pbaCur->pszDir,
-                (pbaCur->pszDir[strlen(pbaCur->pszDir) - 1] == '\\') ? "" : "\\",
-                szName);
+        /* cchPick is the caller's buffer size; it was carried in the BROWSEARG
+         * and never consulted, so this wrote a directory plus a leaf - up to
+         * ~515 bytes - into the caller's CCHMAXPATH stack array. Refuse the
+         * pick rather than dismiss the dialog with a truncated path. */
+        if (!JoinPath(pbaCur->pszPick, pbaCur->cchPick, pbaCur->pszDir, szName)) {
+            pbaCur->pszPick[0] = '\0';
+            WinAlarm(HWND_DESKTOP, WA_WARNING);
+            return;
+        }
         WinDismissDlg(hwnd, DID_OK);
         return;
     }
 
     if (strcmp(szName, "..") == 0) {
         char *pSep;
-        strcpy(szNew, pbaCur->pszDir);
+        strncpy(szNew, pbaCur->pszDir, sizeof(szNew) - 1);
+        szNew[sizeof(szNew) - 1] = '\0';
         {
             int n = (int)strlen(szNew);
             if (n > 3 && szNew[n - 1] == '\\')
@@ -202,10 +238,11 @@ static void BrowseActivate(HWND hwnd, BROWSEREC *prec)
             else
                 *pSep = '\0';
         }
-    } else {
-        sprintf(szNew, "%s%s%s", pbaCur->pszDir,
-                (pbaCur->pszDir[strlen(pbaCur->pszDir) - 1] == '\\') ? "" : "\\",
-                szName);
+    } else if (!JoinPath(szNew, sizeof(szNew), pbaCur->pszDir, szName)) {
+        /* Descending would exceed CCHMAXPATH - stay put rather than navigate to
+         * a truncated path that names a different directory. */
+        WinAlarm(HWND_DESKTOP, WA_WARNING);
+        return;
     }
 
     strncpy(pbaCur->pszDir, szNew, pbaCur->cchDir - 1);
@@ -281,8 +318,11 @@ BOOL BrowseDlg(HWND hwndOwner, char *pszDir, int cchDir, char *pszPick, int cchP
         CHAR  szCur[CCHMAXPATH] = "";
         ULONG cb = sizeof(szCur);
         DosQueryCurrentDisk(&ulDrive, &ulMap);
+        /* DosQueryCurrentDir returns the path WITHOUT the leading backslash and
+         * without the drive, so both are supplied here. */
         DosQueryCurrentDir(0, (PBYTE)szCur, &cb);
-        sprintf(pszDir, "%c:\\%s", (char)('A' + ulDrive - 1), szCur);
+        snprintf(pszDir, (size_t)cchDir, "%c:\\%s",
+                 (char)('A' + ulDrive - 1), szCur);
     }
 
     ba.pszDir  = pszDir;  ba.cchDir  = cchDir;

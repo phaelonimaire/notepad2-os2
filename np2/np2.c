@@ -218,8 +218,14 @@ static EDITFINDREPLACE efrData;
    which is also where a real editor shows the current file. */
 static void ShowStatus(void)
 {
-    CHAR szTitle[400];
-    CHAR szShown[CCHMAXPATH];
+    /* Sized for the worst case rather than trimmed to taste. szShown holds
+       "name [dir]", which is szFileName plus " [", "]" and the NUL; szTitle then
+       holds szShown, the "  |  " separator, szStatus and the suffix. These now
+       truncate instead of overrunning, and truncation would drop the *tail* -
+       so an undersized szTitle silently loses " - Notepad2 for OS/2" on a deep
+       path, which is why both are computed rather than guessed. */
+    CHAR szShown[CCHMAXPATH + 4];
+    CHAR szTitle[(CCHMAXPATH + 4) + 5 + sizeof(szStatus) + 24];
 
     /* Notepad2's "Window Title Display" setting. */
     if (!szFileName[0]) {
@@ -234,7 +240,7 @@ static void ShowStatus(void)
             int n = (int)(pName - szFileName);
             memcpy(szDir, szFileName, n);
             szDir[n] = '\0';
-            sprintf(szShown, "%s [%s]", pName + 1, szDir);
+            snprintf(szShown, sizeof(szShown), "%s [%s]", pName + 1, szDir);
         } else {
             strcpy(szShown, szFileName);
         }
@@ -243,9 +249,9 @@ static void ShowStatus(void)
     }
 
     if (szTitleExcerpt[0])
-        sprintf(szShown, "\"%s\"", szTitleExcerpt);
+        snprintf(szShown, sizeof(szShown), "\"%s\"", szTitleExcerpt);
 
-    sprintf(szTitle, "%s%s%s - Notepad2 for OS/2",
+    snprintf(szTitle, sizeof(szTitle), "%s%s%s - Notepad2 for OS/2",
             szShown,
             szStatus[0] ? "  |  " : "",
             szStatus);
@@ -356,14 +362,14 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
                  OPEN_ACTION_OPEN_IF_EXISTS,
                  OPEN_ACCESS_READONLY | OPEN_SHARE_DENYNONE, NULL);
     if (rc != NO_ERROR) {
-        sprintf(szStatus, "DosOpen failed on %s - rc=%lu", pszFile, (unsigned long)rc);
+        snprintf(szStatus, sizeof(szStatus), "DosOpen failed on %s - rc=%lu", pszFile, (unsigned long)rc);
         return FALSE;
     }
 
     /* Size the buffer from the file, not from a guess. */
     if (DosQueryFileInfo(hf, FIL_STANDARD, &fs3, sizeof(fs3)) != NO_ERROR) {
         DosClose(hf);
-        sprintf(szStatus, "DosQueryFileInfo failed on %s", pszFile);
+        snprintf(szStatus, sizeof(szStatus), "DosQueryFileInfo failed on %s", pszFile);
         return FALSE;
     }
     cbFile = fs3.cbFile;
@@ -371,7 +377,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     pBuf = (char *)malloc(cbFile + 1);
     if (!pBuf) {
         DosClose(hf);
-        sprintf(szStatus, "out of memory for %lu bytes", (unsigned long)cbFile);
+        snprintf(szStatus, sizeof(szStatus), "out of memory for %lu bytes", (unsigned long)cbFile);
         return FALSE;
     }
 
@@ -379,7 +385,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
     DosClose(hf);
     if (rc != NO_ERROR) {
         free(pBuf);
-        sprintf(szStatus, "DosRead failed - rc=%lu", (unsigned long)rc);
+        snprintf(szStatus, sizeof(szStatus), "DosRead failed - rc=%lu", (unsigned long)rc);
         return FALSE;
     }
     pBuf[cbRead] = '\0';
@@ -407,7 +413,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
             /* Report and fall back to the raw bytes rather than showing an
              * empty document - a failed conversion must not look like an
              * empty file. */
-            sprintf(szStatus, "encoding conversion failed (%s) - showing raw bytes",
+            snprintf(szStatus, sizeof(szStatus), "encoding conversion failed (%s) - showing raw bytes",
                     szEncErr);
             iEncoding = NP2ENC_ANSI;
         }
@@ -432,7 +438,7 @@ static BOOL LoadFile(HWND hwnd, PSZ pszFile)
         SyncMenu(hwndFrameGlobal);
 
     if (!szStatus[0])
-        sprintf(szStatus, "%lu bytes  [%s]  %s",
+        snprintf(szStatus, sizeof(szStatus), "%lu bytes  [%s]  %s",
                 (unsigned long)cbRead, Style_Name(iScheme), EncName(iEncoding));
 
     FileWatchOnNewFile(hwnd, szFileName, bReload);
@@ -453,7 +459,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
     cbText = (LONG)LONGFROMMR(Sci(SCI_GETLENGTH, 0, 0));
     pBuf = (char *)malloc(cbText + 1);
     if (!pBuf) {
-        sprintf(szStatus, "out of memory for %ld bytes", (long)cbText);
+        snprintf(szStatus, sizeof(szStatus), "out of memory for %ld bytes", (long)cbText);
         return FALSE;
     }
     Sci(SCI_GETTEXT, MPFROMLONG(cbText + 1), MPFROMP(pBuf));
@@ -469,7 +475,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
             pBuf = pOut;
             cbText = (LONG)cbOut;
         } else {
-            sprintf(szStatus, "encoding conversion failed (%s) - NOT saved", szEncErr);
+            snprintf(szStatus, sizeof(szStatus), "encoding conversion failed (%s) - NOT saved", szEncErr);
             free(pBuf);
             return FALSE;
         }
@@ -481,7 +487,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
                  OPEN_ACCESS_READWRITE | OPEN_SHARE_DENYWRITE, NULL);
     if (rc != NO_ERROR) {
         free(pBuf);
-        sprintf(szStatus, "DosOpen(create) failed on %s - rc=%lu",
+        snprintf(szStatus, sizeof(szStatus), "DosOpen(create) failed on %s - rc=%lu",
                 pszFile, (unsigned long)rc);
         return FALSE;
     }
@@ -490,12 +496,12 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
     DosClose(hf);
     free(pBuf);
     if (rc != NO_ERROR) {
-        sprintf(szStatus, "DosWrite failed - rc=%lu", (unsigned long)rc);
+        snprintf(szStatus, sizeof(szStatus), "DosWrite failed - rc=%lu", (unsigned long)rc);
         return FALSE;
     }
     if (cbWritten != (ULONG)cbText) {
         /* Short write is a real failure, not a rounding detail - say so. */
-        sprintf(szStatus, "SHORT WRITE: %lu of %ld bytes to %s",
+        snprintf(szStatus, sizeof(szStatus), "SHORT WRITE: %lu of %ld bytes to %s",
                 (unsigned long)cbWritten, (long)cbText, pszFile);
         return FALSE;
     }
@@ -506,7 +512,7 @@ static BOOL SaveFile(HWND hwnd, PSZ pszFile, BOOL bAdopt)
         if (bSaveRecentFiles)
             MruAddQualified(szFileName);
     }
-    sprintf(szStatus, "%s %lu bytes to %s", bAdopt ? "Saved" : "Saved a copy of",
+    snprintf(szStatus, sizeof(szStatus), "%s %lu bytes to %s", bAdopt ? "Saved" : "Saved a copy of",
             (unsigned long)cbWritten, pszFile);
     return TRUE;
 }
@@ -1666,7 +1672,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 WinMessageBox(HWND_DESKTOP, hwnd, (PSZ)"Save the document first.",
                               (PSZ)"Properties", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
             } else if (!RunObjectSettings(hwnd, szFileName)) {
-                sprintf(szStatus, "the Workplace Shell has no object for %s", szFileName);
+                snprintf(szStatus, sizeof(szStatus), "the Workplace Shell has no object for %s", szFileName);
                 ShowStatus();
             }
             break;
@@ -1710,7 +1716,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             /* Take the selection - or the word at the caret - as the search
              * string, so F3 then repeats it without opening the dialog. */
             if (EditGetSelOrWord(hwndSci, efrData.szFind, sizeof(efrData.szFind)) > 0)
-                sprintf(szStatus, "find text: %s", efrData.szFind);
+                snprintf(szStatus, sizeof(szStatus), "find text: %s", efrData.szFind);
             else
                 strcpy(szStatus, "nothing selected to use as find text");
             ShowStatus();
@@ -1808,7 +1814,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             /* Changes what the NEXT save writes; the buffer is already UTF-8
              * internally, so nothing needs re-decoding here. */
             iEncoding = idCmd - IDM_ENC_ANSI;
-            sprintf(szStatus, "encoding set to %s", EncName(iEncoding));
+            snprintf(szStatus, sizeof(szStatus), "encoding set to %s", EncName(iEncoding));
             ShowStatus();
             SyncMenu(hwndFrame);
             break;
@@ -1905,7 +1911,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         case IDM_SAVESETTINGSNOW:
             if (bSaveSettingsOnExit)
         SaveSettings(hwndFrame);
-            sprintf(szStatus, "settings saved to %s", szIniPath);
+            snprintf(szStatus, sizeof(szStatus), "settings saved to %s", szIniPath);
             ShowStatus();
             break;
 
@@ -1940,7 +1946,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                               (PSZ)"Favorites", 0, MB_OK | MB_INFORMATION | MB_MOVEABLE);
             } else {
                 MruAdd(aFav, &cFav, szFileName);
-                sprintf(szStatus, "added to favorites");
+                snprintf(szStatus, sizeof(szStatus), "added to favorites");
                 ShowStatus();
             }
             break;
@@ -1960,7 +1966,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             hobjDesk = WinQueryObject((PCSZ)"<WP_DESKTOP>");
             if (hobjFile != NULLHANDLE && hobjDesk != NULLHANDLE &&
                 WinCreateShadow(hobjFile, hobjDesk, 0) != NULLHANDLE) {
-                sprintf(szStatus, "desktop shadow created");
+                snprintf(szStatus, sizeof(szStatus), "desktop shadow created");
                 ShowStatus();
             } else {
                 WinMessageBox(HWND_DESKTOP, hwnd,
