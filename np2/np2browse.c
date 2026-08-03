@@ -52,6 +52,198 @@ typedef struct _BROWSEARG {
 
 static BROWSEARG *pbaCur;
 
+/* ---- Resizable-dialog layout -------------------------------------------
+ *
+ * Each control records the MARGIN between its edges and the dialog's edges as
+ * the template left it, and every WM_SIZE recomputes absolute positions from
+ * those margins. An edge that is anchored keeps its margin; the opposite edge
+ * then either holds the control's size (it rides) or stretches to follow.
+ *
+ * This replaces a delta-based version that accumulated state across WM_SIZE and
+ * could not survive being re-baselined - the symptom was a vertical resize that
+ * MOVED the controls (nothing had resized them, so they kept their offset from
+ * the moving bottom-left origin) and a horizontal one that CLIPPED them.
+ * Margins are absolute, so every WM_SIZE lands in the same place regardless of
+ * how many were missed or in what order they arrived. */
+#define ANC_L  0x01
+#define ANC_B  0x02
+#define ANC_R  0x04
+#define ANC_T  0x08
+
+typedef struct _ANCHOR {
+    ULONG id;
+    ULONG fl;                  /* which dialog edges this control follows */
+    LONG  l, b, r, t;          /* margins to each dialog edge, at baseline */
+    LONG  cx, cy;              /* size at baseline, kept when not stretching */
+} ANCHOR;
+
+/* Container takes all the slack. The path row rides the top and widens. The
+ * buttons keep their size and hold the bottom-right corner. */
+static ANCHOR aAnchor[] = {
+    { IDC_BROWSECNR,     ANC_L | ANC_B | ANC_R | ANC_T, 0,0,0,0, 0,0 },
+    { IDC_BROWSEPATH,    ANC_L | ANC_R | ANC_T,         0,0,0,0, 0,0 },
+    { IDC_BROWSEPATHLBL, ANC_L | ANC_T,                 0,0,0,0, 0,0 },
+    { DID_OK,            ANC_R | ANC_B,                 0,0,0,0, 0,0 },
+    { DID_CANCEL,        ANC_R | ANC_B,                 0,0,0,0, 0,0 }
+};
+#define NANCHOR ((int)(sizeof(aAnchor) / sizeof(aAnchor[0])))
+static BOOL bAnchorsTaken = FALSE;
+/* The dialog the margins were measured against. Anchors are only valid for that
+ * window: bAnchorsTaken is static and would otherwise survive into the next
+ * invocation, and a stale margin set applied to a half-built dialog is what
+ * turns a layout bug into "the border and the buttons are gone". */
+static HWND hwndAnchored = NULLHANDLE;
+/* Size the controls were last laid out for, so a pure move does no work. */
+static LONG cxLaidOut, cyLaidOut;
+
+
+/* Record each control's margins against the dialog as it stands right now. */
+static void AnchorsCapture(HWND hwnd)
+{
+    SWP swpDlg;
+    int i;
+
+    bAnchorsTaken = FALSE;
+    hwndAnchored  = NULLHANDLE;
+    cxLaidOut = cyLaidOut = 0;      /* force the first layout after capture */
+    if (!WinQueryWindowPos(hwnd, &swpDlg) || swpDlg.cx <= 0 || swpDlg.cy <= 0)
+        return;
+
+    for (i = 0; i < NANCHOR; i++) {
+        HWND h = WinWindowFromID(hwnd, aAnchor[i].id);
+        SWP  swp;
+        if (h == NULLHANDLE || !WinQueryWindowPos(h, &swp))
+            continue;
+        aAnchor[i].l  = swp.x;
+        aAnchor[i].b  = swp.y;
+        aAnchor[i].r  = swpDlg.cx - (swp.x + swp.cx);
+        aAnchor[i].t  = swpDlg.cy - (swp.y + swp.cy);
+        aAnchor[i].cx = swp.cx;
+        aAnchor[i].cy = swp.cy;
+        /* A negative margin means this was measured before the dialog settled.
+         * Refuse the whole set rather than lay out from it. */
+        if (aAnchor[i].l < 0 || aAnchor[i].b < 0 ||
+            aAnchor[i].r < 0 || aAnchor[i].t < 0)
+            return;
+    }
+    bAnchorsTaken = TRUE;
+    hwndAnchored  = hwnd;
+}
+
+static void AnchorsApplyImpl(HWND hwnd, LONG cxDlg, LONG cyDlg);
+
+/* Lay the dialog out at its CURRENT size and repaint.
+ *
+ * The size is queried rather than taken from the message, and the positions are
+ * absolute margins rather than accumulated deltas, so this is idempotent: it can
+ * be called from any message, any number of times, and lands in the same place.
+ * That matters because the delivery path is not one message - WM_WINDOWPOSCHANGED
+ * is what the frame actually receives, and WM_SIZE is generated from it by the
+ * default window procedure [DOC-IBM - pm3.txt, WM_WINDOWPOSCHANGED - Default
+ * Processing: "SWP_SIZE A WM_SIZE with the new window size"]. */
+static void BrowseLayout(HWND hwnd)
+{
+    HWND hwndCnr = WinWindowFromID(hwnd, IDC_BROWSECNR);
+    SWP  swp;
+
+    /* Only ever lay out from margins measured in WM_INITDLG for THIS dialog.
+     * Capturing lazily from here was a trap: a size change can arrive while the
+     * dialog is still being built, and capturing then measured a half-placed
+     * layout - which the next capture would then lock in. If the margins are not
+     * ready, do nothing and leave the template's own layout alone. */
+    if (!bAnchorsTaken || hwnd != hwndAnchored)
+        return;
+    if (!WinQueryWindowPos(hwnd, &swp) || swp.cx <= 0 || swp.cy <= 0)
+        return;
+
+    /* WM_WINDOWPOSCHANGED reports moves as well as resizes, and dragging the
+     * dialog by its title bar sends one per mouse-move. Re-laying out for a
+     * move is pure churn - the margins produce the same answer - so compare
+     * against the size last laid out and do nothing when only x/y changed. */
+    if (swp.cx == cxLaidOut && swp.cy == cyLaidOut)
+        return;
+    cxLaidOut = swp.cx;
+    cyLaidOut = swp.cy;
+
+    AnchorsApplyImpl(hwnd, swp.cx, swp.cy);
+
+    /* The records must re-flow into the container's new width; without this
+     * they keep the column layout they had at the old size. */
+    if (hwndCnr != NULLHANDLE)
+        WinSendMsg(hwndCnr, CM_INVALIDATERECORD, NULL,
+                   MPFROM2SHORT(0, CMA_ERASE | CMA_REPOSITION));
+}
+
+/* Reapply the margins against the dialog's current size.
+ *
+ * Every control is moved in ONE WinSetMultWindowPos call rather than a
+ * WinSetWindowPos each. Positioned one at a time they are laid out - and
+ * repainted - in sequence, so a drag shows each control briefly against the
+ * others' old positions: the labels and the container's border visibly jump
+ * about before settling. The batch form applies the whole layout as a unit,
+ * which is what it exists for [DOC-IBM - pm2.txt, WinSetMultWindowPos]. */
+static void AnchorsApplyImpl(HWND hwnd, LONG cxDlg, LONG cyDlg)
+{
+    SWP aswp[NANCHOR];
+    ULONG cswp = 0;
+    int i;
+
+    if (!bAnchorsTaken || cxDlg <= 0 || cyDlg <= 0)
+        return;
+
+    for (i = 0; i < NANCHOR; i++) {
+        const ANCHOR *pa = &aAnchor[i];
+        HWND h = WinWindowFromID(hwnd, pa->id);
+        LONG x, y, cx, cy;
+        if (h == NULLHANDLE)
+            continue;
+
+        /* Horizontal: both edges anchored means stretch, one means ride. */
+        if ((pa->fl & ANC_L) && (pa->fl & ANC_R)) {
+            x  = pa->l;
+            cx = cxDlg - pa->l - pa->r;
+        } else if (pa->fl & ANC_R) {
+            cx = pa->cx;
+            x  = cxDlg - pa->r - cx;
+        } else {
+            x  = pa->l;
+            cx = pa->cx;
+        }
+
+        /* Vertical: bottom-left origin, so ANC_T is the HIGH edge. */
+        if ((pa->fl & ANC_B) && (pa->fl & ANC_T)) {
+            y  = pa->b;
+            cy = cyDlg - pa->b - pa->t;
+        } else if (pa->fl & ANC_T) {
+            cy = pa->cy;
+            y  = cyDlg - pa->t - cy;
+        } else {
+            y  = pa->b;
+            cy = pa->cy;
+        }
+
+        if (cx < 8)  cx = 8;      /* a dialog dragged tiny must not invert */
+        if (cy < 8)  cy = 8;
+
+        /* SWP is assigned by FIELD NAME: its declaration order is (fl, cy, cx,
+         * y, x), the reverse of WinSetWindowPos's arguments, so a positional
+         * initialiser here would silently swap width with height
+         * [os2ref/pm-window-messaging.md]. */
+        memset(&aswp[cswp], 0, sizeof(aswp[cswp]));
+        aswp[cswp].fl               = SWP_SIZE | SWP_MOVE;
+        aswp[cswp].cy               = cy;
+        aswp[cswp].cx               = cx;
+        aswp[cswp].y                = y;
+        aswp[cswp].x                = x;
+        aswp[cswp].hwndInsertBehind = NULLHANDLE;   /* no SWP_ZORDER: unused */
+        aswp[cswp].hwnd             = h;
+        cswp++;
+    }
+
+    if (cswp > 0)
+        WinSetMultWindowPos(WinQueryAnchorBlock(hwnd), aswp, cswp);
+}
+
 /* Join a directory and a leaf into pszOut, supplying the separator only when
  * the directory lacks one.
  *
@@ -144,6 +336,29 @@ static void BrowseFill(HWND hwnd, const char *pszDir)
             BrowseInsert(hwndCnr, prec, "..", TRUE, NULL);
     }
 
+    /* Then the drives, so the browser can leave the volume it started on -
+     * there was previously no way to do that at all. DosQueryCurrentDisk
+     * returns a bitmask of the drives that exist, bit 0 = A:
+     * [os2ref/file-io.md, DosQueryCurrentDisk]. "[-C-]" is the convention the
+     * OS/2 file dialogs use, and it cannot collide with a real directory name
+     * because ':' and '-' bracketing is not a legal name here. */
+    {
+        ULONG ulDrive = 0, ulMap = 0;
+        if (DosQueryCurrentDisk(&ulDrive, &ulMap) == NO_ERROR) {
+            int d;
+            for (d = 0; d < 26; d++) {
+                if (ulMap & (1UL << d)) {
+                    BROWSEREC *prec = BrowseAlloc(hwndCnr);
+                    if (prec) {
+                        CHAR szDrv[8];
+                        snprintf(szDrv, sizeof(szDrv), "[-%c-]", (char)('A' + d));
+                        BrowseInsert(hwndCnr, prec, szDrv, TRUE, NULL);
+                    }
+                }
+            }
+        }
+    }
+
     if (!JoinPath(szMask, sizeof(szMask), pszDir, "*"))
         return;
 
@@ -222,6 +437,15 @@ static void BrowseActivate(HWND hwnd, BROWSEREC *prec)
         return;
     }
 
+    /* A drive entry: PlainName has already stripped the [ ], leaving "-C-". */
+    if (szName[0] == '-' && szName[2] == '-' && szName[3] == '\0') {
+        snprintf(szNew, sizeof(szNew), "%c:\\", szName[1]);
+        strncpy(pbaCur->pszDir, szNew, pbaCur->cchDir - 1);
+        pbaCur->pszDir[pbaCur->cchDir - 1] = '\0';
+        BrowseFill(hwnd, pbaCur->pszDir);
+        return;
+    }
+
     if (strcmp(szName, "..") == 0) {
         char *pSep;
         strncpy(szNew, pbaCur->pszDir, sizeof(szNew) - 1);
@@ -280,7 +504,36 @@ static MRESULT EXPENTRY BrowseDlgProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM m
 
         BrowseFill(hwnd, pbaCur->pszDir);
         PMCenterDlgInParent(hwnd, WinQueryWindow(hwnd, QW_OWNER));
+        /* Take the margins from the template's own layout, before the user can
+         * have resized anything. Centring only moves the dialog, so the size
+         * here is still the one the template asked for. */
+        AnchorsCapture(hwnd);
         return (MRESULT)FALSE;
+    }
+
+    /* A PM dialog does not reflow its controls, so a sizeable one lays itself
+     * out - from the margins captured in WM_INITDLG.
+     *
+     * THE SIZE ARRIVES AS WM_WINDOWPOSCHANGED, NOT WM_SIZE. A message trace of
+     * this dialog through a full resize shows WM_ADJUSTWINDOWPOS, then
+     * WM_WINDOWPOSCHANGED, then WM_FORMATFRAME and WM_PAINT - and WM_SIZE not
+     * once. The books say the default window procedure turns SWP_SIZE into a
+     * WM_SIZE [pm3.txt, WM_WINDOWPOSCHANGED - Default Processing], but that is
+     * WinDefWindowProc; a dialog runs WinDefDlgProc, and the frame consumes the
+     * position change without ever producing one. Three earlier attempts here
+     * hung the layout off WM_SIZE and therefore never ran at all - which is why
+     * a vertical drag appeared to MOVE the controls (they kept their offset from
+     * a moving bottom-left origin) and a horizontal one CLIPPED them.
+     *
+     * Both are handled: WM_SIZE costs nothing if it never comes, and neither is
+     * swallowed - WinDefDlgProc runs first so the frame formats itself (that is
+     * what positions the title bar and the sizing border), then the controls go
+     * on top of the geometry it settled on. */
+    case WM_SIZE:
+    case WM_WINDOWPOSCHANGED: {
+        MRESULT mr = WinDefDlgProc(hwnd, msg, mp1, mp2);
+        BrowseLayout(hwnd);
+        return mr;
     }
 
     /* The container reports through WM_CONTROL. CN_ENTER carries a
