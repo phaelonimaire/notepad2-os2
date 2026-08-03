@@ -1,7 +1,7 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-08-02 (a read-through audit of the port: one systemic buffer-overflow class fixed,
-and one error found in the toolkit reference itself).
+Checkpoint: 2026-08-02 (an audit, then a long pass in front of the running app: the font pipeline,
+a resizable file browser, and a real toolbar with icons — all verified on screen).
 
 Previously: 2026-08-01 (toolbar, file change notification, and a mouse-capable test harness).
 
@@ -13,7 +13,7 @@ The **platform layer is done**; the **application is not**.
 |---|---|---|
 | Menu commands (distinct) | 146 | 143 — every one that applies |
 | Dialogs | 27 | 18 |
-| App-layer code | 26,796 lines | 8,455 lines |
+| App-layer code | 26,796 lines | 10,094 lines |
 
 Counted reproducibly, so the number cannot drift into optimism:
 
@@ -57,7 +57,7 @@ look impossible. Sized honestly:
 | ~~Statusbar~~ | **Done** — four `WC_STATIC` panels | |
 | ~~Favorites / Open With / Desktop Link~~ | **Done** — commit `fc2e14e`; desktop link is a real WPS shadow | |
 | ~~Window title / Esc key / misc preferences~~ | **Done** — commit `793f6e4` | |
-| ~~Toolbar~~ | **Done** — commit `780c5e5`; composed from `WC_BUTTON`, there being no PM toolbar class. Button presses verified by mouse | |
+| ~~Toolbar~~ | **Done** — `np2/np2tool.c`, commits `780c5e5` and `07e7083`. PM has no toolbar class, so it is a layout engine over child windows: items anchor to either end of the bar, separators are sized gaps rather than windows, and an item can hold a window of any class. 16x16 icons cut from Notepad2's own `res/Toolbar.bmp`. Verified on screen | |
 | ~~Settings persistence~~ | **Done** — `np2/np2ini.c`, commit `f3e018f` | |
 | ~~Launch / Run~~ | **Done** — `np2/np2run.c`, commit `caec1fd` | |
 | ~~Scheme editor~~ | **Done** — Customize Colours, commit `11fc683` | |
@@ -66,7 +66,7 @@ look impossible. Sized honestly:
 | ~~Print / Page Setup~~ | **Written** — commit `1b4ddc0`. **Not fully verified**: this VM has no printer driver, so only the queue-discovery half has ever run. See "not seen working" below | |
 | ~~**Change Notify**~~ | **Done** — `np2/np2watch.c`, commit `614268d`. OS/2 has no file-change notification at any layer, and this remains the only genuine platform absence found in the whole port. It cost less than the label implied: Notepad2 already polls, and only used the Win32 API as a gate in front of the timestamp comparison that does the real work | **Was the only real platform limit** |
 
-`scintilla/os2/` (2,655 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
+`scintilla/os2/` (3,254 lines) is the finished part: all 36 `Surface` virtuals, `Font`, `Window`,
 `ListBox`, `Menu`, `ElapsedTime`, `DynamicLibrary`, the `Platform` statics, and `ScintillaPM.cxx` —
 the control itself, with scroll bars, clipboard, and PM-timer fine tickers. Scintilla's 144
 portable translation units compile unmodified. All of it verified on screen, not just at `-Wall`.
@@ -84,10 +84,11 @@ Enclose shortcuts, Convert (five case modes, tabify/untabify by selection or ind
 (date/time, filename, path), Special (line/stream comment, URL and C escaping, char↔hex, matching
 brace, delete line/word left/right), Bookmarks, and the View toggles with zoom.
 
-Encodings, the file browser, settings persistence, the toolbar and change notification have all
-landed since that paragraph was first written. What is left is **printing verification** (needs a
-guest with a printer driver), the **scheme editor**, and the **long tail** of command variants —
-no whole subsystem, and nothing blocked.
+Encodings, the file browser, settings persistence, the toolbar, the scheme editor and change
+notification have all landed since that paragraph was first written. What is left is **printing
+verification** (needs a guest with a printer driver) and the **long tail** of command variants —
+no whole subsystem, and nothing blocked. (An earlier revision of this paragraph still listed the
+scheme editor as outstanding while the table above marked it done; the table was right.)
 
 ## Build
 
@@ -143,8 +144,8 @@ wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 
 ~~4. `Styles.c` — syntax highlighting.~~ **Done** — `np2/np2style.c`, commit `3395f74`. 21 schemes
    auto-detected from the file extension, plus `View > Default Font` through `WinFontDlg`.
-   Still open from that area: the **scheme editor** (`IDD_STYLECONFIG` / `IDD_STYLESELECT`), which
-   needs settings persistence first — schemes are compiled in today.
+   The **scheme editor** from that area has since landed too — Customize Colours, commit `11fc683`,
+   with the palette persisted per slot. Its preview draws in the chosen colour as of `04f1628`.
 5. **Encoding conversion.** (Line *endings* are not part of this — they are `SCI_SETEOLMODE` /
    `SCI_CONVERTEOLS` and need nothing new; do them first, they are an afternoon.) Runs straight
    into the three independent code pages
@@ -281,7 +282,9 @@ entry point is implemented.
 - No drag-drop, no printing, no DBCS lead-byte handling (`IsDBCSLeadByte` returns false rather than
   consulting `DosQueryDBCSEnv`).
 - Sort and alignment compare bytes, not characters; rectangular selection is refused rather than
-  mishandled, so the column-sort option is disabled.
+  mishandled, so the column-sort option is disabled. **This now matters more than it did**: the font
+  dialog no longer forces fixed-pitch, so a proportional font is reachable and these helpers have
+  never been run against one.
 - Find/Replace does not transform `\uXXXX` above 255 (needs `UniUconv` against the editor's code
   page — see step 5), and Notepad2's `^c` "replace with clipboard" token is not wired up.
 
@@ -370,6 +373,40 @@ That is not a build — it cannot see the OS/2 libraries and `PlatPM.cxx` fails 
 32-bit libstdc++ headers — but it catches undeclared identifiers and type errors before a file ever
 reaches the guest, and it caught two mistakes in the audit fixes themselves.
 
+### The on-screen pass that followed — 2026-08-02
+
+Everything below was found by *running it* and fixed against a screenshot, a trace, or a probe.
+Verified on screen unless said otherwise.
+
+| Was | Cause | Commit |
+|---|---|---|
+| Statusbar never showed Ln/Col | `UpdateStatusbar()` sat inside `if (iMarkOccurrences)`, which is off by default | `07e7083` |
+| Resize flickered behind the editor | client class had `CS_SIZEREDRAW` — "whole window is redrawn on any size change" | `07e7083` |
+| Toolbar buttons clipped their labels | height and width were literals; the statusbar was measured but the toolbar was not | `07e7083` |
+| Default text colour did nothing | `Style_Apply` set `STYLE_DEFAULT` to a literal, then `STYLECLEARALL` copied it over everything | `07e7083` |
+| Customize Colours named the colour but drew it in black | a static has no style for colour; needs `PP_FOREGROUNDCOLOR` | `04f1628` |
+| "Empty window" was not empty | `WM_CREATE` loaded a feature tour plus the sort commands' test data | `07e7083` |
+| Any font rendered as Courier | `FONT_MATCH_NEAREST` **is** `FONT_MATCH`, so a substitution reports success | `bdf2918` |
+| Size 10 drew much larger than size 10 | `fp.size` is a device height in pels; it was being converted a second time | `bdf2918` |
+| The browser could not resize, or change drives | the dialog is never sent `WM_SIZE` | `e6841c6` |
+| The toolbar had no icons | `"#id"` in the button text is dialog-template-only; needs `BTNCDATA.hImage` | `07e7083` |
+
+**Four of these took several attempts**, and the pattern is worth naming: each time I reasoned from
+the books instead of measuring, and the books were *right* but about a different context — `"#300"`
+is real, for dialog templates; `WM_SIZE` from `SWP_SIZE` is real, for `WinDefWindowProc`. What broke
+each deadlock was a probe. Three are worth rebuilding if you hit the same ground:
+
+- **A message trace** in the dialog procedure, logging to a file beside the exe. 20 KB of it showed
+  `WM_SIZE` was never delivered — after four rewrites that all "should" have worked.
+- **`fontprobe.exe`** (left on the guest in `/tmp/np2`) — dumps `GpiQueryFonts` metrics for a face.
+  It is what revealed System VIO's 17 non-monotonic instances.
+- **A five-variant bitmap probe** — binds the same icon in five formats and calls `GpiLoadBitmap` on
+  each. It showed the failing case was the OS/2-format one, the opposite of the assumption.
+
+Write the log to a **relative** path so it lands wherever the exe was launched from; an absolute
+`/tmp/...` only exists on the build guest. And note that a program started over SSH is detached and
+**cannot create a PM window**, so the guest cannot be driven that way — see the testing note above.
+
 ### Verification status — what has NOT been seen working
 
 Everything else described here has been exercised on screen. These have not, and should not be
@@ -379,17 +416,28 @@ read as working:
   `SplEnumQueue` correctly reports zero queues and the code stops at its honest-failure message.
   The queue-discovery path and that message are verified; **`DevOpenDC` onwards has never run.**
 
-- **Every fix from the 2026-08-02 audit.** Static verification only: the app files type-check
-  against the emx headers, `JoinPath` and the `lcid` eviction were exercised as standalone
-  programs, and both pre-commit checkers pass — but **nothing has been rebuilt on the guest or
-  watched on screen**, and `PlatPM.cxx` has not been compiled at all since the change. Three
-  cheap confirmations, in the order they are worth doing:
+- **The bounded-write fixes from the 2026-08-02 audit.** The port they are in has since been
+  built and run for hours without incident, so they are not *suspected* — but nothing deliberately
+  exercised the overflow paths, which is what would actually prove them. Three cheap confirmations:
   - Open a file with a line of 246+ characters, select it, invoke *Use Selection As Find Text*.
     The status text should truncate; before the fix this wrote 267 bytes past `szStatus`.
   - Save a file whose full path is near `CCHMAXPATH` and check the title bar still ends in
     `" - Notepad2 for OS/2"` — that is the resize, not just the bound, being right.
-  - Browse into a deep directory. A pick that cannot fit should now beep and refuse rather than
+  - Browse into a deep directory. A pick that cannot fit should beep and refuse rather than
     return a truncated path naming a different file.
+
+- **Saved window geometry and "always on top".** Both were written in the same pass and neither
+  has been watched. The geometry path needs a clean exit with *save settings on exit* enabled, and
+  the interesting case is a **video-mode change between runs** — that is what `ClampToDesktop`
+  exists for. "Always on top" re-asserts `HWND_TOP` on a 500 ms timer because PM has no such
+  attribute; whether that reads as solid or as a visible flicker when another window is raised is
+  exactly the thing a screenshot cannot tell you.
+
+- **Proportional fonts.** Reachable for the first time (the fixed-pitch restriction on the font
+  dialog is now Shift-only, as upstream has it), but never exercised. Scintilla and the platform
+  layer measure per prefix with `GpiQueryTextBox`, so the drawing should be right; the risk is this
+  port's own byte-oriented helpers in `np2edit.c` — sort, align, and the rectangular-selection
+  refusal noted below.
 
 A status file that says "done" for something nobody has watched work is the same failure as calling
 unwritten work "blocked" — it stops the next person from checking.
