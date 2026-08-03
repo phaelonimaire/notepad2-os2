@@ -36,6 +36,7 @@
 #include "np2run.h"
 #include "np2browse.h"
 #include "np2print.h"
+#include "np2tool.h"
 #include "np2watch.h"
 #include "np2enc.h"
 #include "pmhelpers.h"
@@ -105,6 +106,11 @@ static int  iTitleFormat = 2;
 /* Esc key: 0 nothing, 1 minimise, 2 exit. */
 static int  iEscFunction = 0;
 static BOOL bAlwaysOnTop  = FALSE;
+/* Re-assert the z-order for "always on top". Distinct from IDT_WATCH
+ * (np2watch.h). Half a second is often enough to look continuous without
+ * making the window fight the user for the top of the stack. */
+#define IDT_ONTOP           0xA001
+#define ONTOP_INTERVAL_MS   500
 static BOOL bAutoCloseTags = TRUE;
 /* Notepad2's persistence and convenience switches. Stored inverted from its own
  * "NoSave..." names so the flag reads the way the menu item does. */
@@ -139,24 +145,46 @@ static BOOL bStatusbar = TRUE;
  * id means its WM_COMMAND lands in the same dispatch the menu uses - there is
  * no separate toolbar handler, and the two can never disagree. */
 static BOOL bToolbar = TRUE;
-static LONG cyToolbar = 24;
-static const struct { USHORT id; const char *pszText; } aToolButtons[] = {
-    { IDM_NEW, "New" }, { IDM_OPEN, "Open" }, { IDM_SAVE, "Save" },
-    { IDM_UNDO, "Undo" }, { IDM_REDO, "Redo" },
-    { IDM_CUT, "Cut" }, { IDM_COPY, "Copy" }, { IDM_PASTE, "Paste" },
-    { IDM_FIND, "Find" }, { IDM_REPLACE, "Repl" },
-    { IDM_GOTOLINE, "Goto" }, { IDM_WORDWRAP, "Wrap" },
-    { 0, NULL }
+/* Grouped the way Notepad2 groups its own toolbar - src/Notepad2.c's tbbMainWnd
+ * separates file / undo / clipboard / search with TBSTYLE_SEP. The engine and
+ * the reasoning behind it are in np2tool.h. */
+#define TBSEP { 0, TBI_SEPARATOR, TBI_BEGIN, NULL, 0, NULL, 0 }
+#define TBBTN(i, s, b) { (i), TBI_BUTTON, TBI_BEGIN, (s), (b), NULL, 0 }
+static const TOOLITEM aToolItems[] = {
+    TBBTN(IDM_NEW,      "New",   IDB_TB_NEW),
+    TBBTN(IDM_OPEN,     "Open",  IDB_TB_OPEN),
+    TBBTN(IDM_SAVE,     "Save",  IDB_TB_SAVE),
+    TBSEP,
+    TBBTN(IDM_UNDO,     "Undo",  IDB_TB_UNDO),
+    TBBTN(IDM_REDO,     "Redo",  IDB_TB_REDO),
+    TBSEP,
+    TBBTN(IDM_CUT,      "Cut",   IDB_TB_CUT),
+    TBBTN(IDM_COPY,     "Copy",  IDB_TB_COPY),
+    TBBTN(IDM_PASTE,    "Paste", IDB_TB_PASTE),
+    TBSEP,
+    TBBTN(IDM_FIND,     "Find",  IDB_TB_FIND),
+    TBBTN(IDM_REPLACE,  "Repl",  IDB_TB_REPL),
+    TBBTN(IDM_GOTOLINE, "Goto",  IDB_TB_GOTO),
+    TBSEP,
+    TBBTN(IDM_WORDWRAP, "Wrap",  IDB_TB_WRAP)
 };
+#define NTOOLITEMS ((int)(sizeof(aToolItems) / sizeof(aToolItems[0])))
 #define NTOOLBUTTONS 12
-/* Which toolbar buttons are shown - one bit per entry in aToolButtons. PM has
- * no toolbar class, so "customize" means this and nothing more. */
+/* Which toolbar buttons are shown - one bit per BUTTON in table order.
+ * Separators are not counted, so a saved ToolbarButtons value keeps its meaning
+ * across a change to the grouping. */
 static ULONG flToolMask = 0xFFFUL;      /* all 12 */
-static HWND ahwndTool[NTOOLBUTTONS];
 static HWND hwndStatus[4] = { NULLHANDLE, NULLHANDLE, NULLHANDLE, NULLHANDLE };
 static LONG cyStatus = 20;
 static SWP  swpSaved;                 /* window position, restored at start */
 static BOOL bHaveSavedPos = FALSE;
+static BOOL bStartMaximized = FALSE;
+/* The frame's geometry while it is NOT maximized. WinQueryWindowPos on a
+ * maximized frame reports the maximized rectangle, so saving that would lose
+ * the size to come back to - the window would "restore" to full screen for
+ * ever after. Tracked on every WM_SIZE that is not a maximize/minimize. */
+static SWP  swpRestore;
+static BOOL bHaveRestore = FALSE;
 
 /* Commands that are nothing but a Scintilla message. Keeping them in a table
  * rather than the switch is the difference between a readable dispatch and
@@ -267,6 +295,78 @@ static void SyncMenu(HWND hwndFrame);
 static MRESULT Sci(unsigned int msg, MPARAM mp1, MPARAM mp2)
 {
     return WinSendMsg(hwndSci, msg, mp1, mp2);
+}
+
+/* Force a saved window rectangle back onto the current desktop.
+ *
+ * A geometry saved under one video mode is not necessarily reachable under the
+ * next one: drop to a smaller mode and the restored frame can sit entirely past
+ * the right or bottom edge, or - worse - with its title bar above the top, where
+ * there is nothing left to drag. PM will happily place a window there, so the
+ * sanity check has to happen here.
+ *
+ * Clamped rather than rejected, so an almost-valid position is nudged back
+ * instead of being thrown away for the default. */
+static void ClampToDesktop(SWP *pswp)
+{
+    const LONG cxScreen = WinQuerySysValue(HWND_DESKTOP, SV_CXSCREEN);
+    const LONG cyScreen = WinQuerySysValue(HWND_DESKTOP, SV_CYSCREEN);
+    /* Enough of the frame must remain grabbable to drag it back. */
+    const LONG cyTitle  = WinQuerySysValue(HWND_DESKTOP, SV_CYTITLEBAR);
+    const LONG cxMin    = 120;
+    const LONG cyMin    = 80;
+
+    if (cxScreen <= 0 || cyScreen <= 0)
+        return;                       /* no usable answer - leave it alone */
+
+    if (pswp->cx < cxMin) pswp->cx = cxMin;
+    if (pswp->cy < cyMin) pswp->cy = cyMin;
+    if (pswp->cx > cxScreen) pswp->cx = cxScreen;
+    if (pswp->cy > cyScreen) pswp->cy = cyScreen;
+
+    /* Bottom-left origin: y is the BOTTOM edge, so the title bar is at
+     * y + cy and it is the TOP that must stay on the desktop. */
+    if (pswp->x + pswp->cx > cxScreen) pswp->x = cxScreen - pswp->cx;
+    if (pswp->y + pswp->cy > cyScreen) pswp->y = cyScreen - pswp->cy;
+    if (pswp->x < 0) pswp->x = 0;
+    if (pswp->y < 0) pswp->y = 0;
+
+    /* Belt and braces: if the arithmetic above still left the title bar off the
+     * top - a saved cy taller than this desktop - pull it fully into view. */
+    if (pswp->y + pswp->cy > cyScreen)
+        pswp->y = (cyScreen > pswp->cy) ? cyScreen - pswp->cy : 0;
+    if (cyTitle > 0 && pswp->y + pswp->cy < cyTitle)
+        pswp->y = cyTitle - pswp->cy;
+}
+
+/* "Always on top", as far as PM allows.
+ *
+ * There is no WS_EX_TOPMOST equivalent: HWND_TOP is a placement passed to
+ * WinSetWindowPos, not an attribute the window keeps [os2ref/pm-window-messaging.md,
+ * hwndInsertBehind]. A single call therefore raises the frame once and the next
+ * window to be activated goes straight over it, which is why the menu item
+ * looked dead. The honest approximation is to re-assert the placement on a
+ * timer; SWP_ZORDER alone reorders WITHOUT activating, so this does not steal
+ * focus from whatever the user is typing into.
+ *
+ * Turning the option off simply stops re-asserting. It must NOT push the frame
+ * to HWND_BOTTOM - that sends the window behind everything, which is a
+ * different behaviour from "no longer on top". */
+static void AssertOnTop(HWND hwndFrame)
+{
+    if (hwndFrame != NULLHANDLE)
+        WinSetWindowPos(hwndFrame, HWND_TOP, 0, 0, 0, 0, SWP_ZORDER);
+}
+
+static void ApplyAlwaysOnTop(HWND hwndClientW, HWND hwndFrame)
+{
+    HAB hab = WinQueryAnchorBlock(hwndClientW);
+    if (bAlwaysOnTop) {
+        AssertOnTop(hwndFrame);
+        WinStartTimer(hab, hwndClientW, IDT_ONTOP, ONTOP_INTERVAL_MS);
+    } else {
+        WinStopTimer(hab, hwndClientW, IDT_ONTOP);
+    }
 }
 
 /* Refresh the statusbar from the editor's current state. Driven by
@@ -657,6 +757,7 @@ static void LoadSettings(void)
     swpSaved.cx = IniGetInt(SEC_WIN, "CX", -1);
     swpSaved.cy = IniGetInt(SEC_WIN, "CY", -1);
     bHaveSavedPos = (BOOL)(swpSaved.cx > 0 && swpSaved.cy > 0);
+    bStartMaximized = IniGetInt(SEC_WIN, "Maximized", 0) ? TRUE : FALSE;
 
     {
         int i;
@@ -775,11 +876,18 @@ static void SaveSettings(HWND hwndFrame)
     /* "Sticky window position" means the saved geometry is the one you chose, so
      * moving the window must NOT overwrite it. */
     if (!bStickyWindowPos && hwndFrame != NULLHANDLE && WinQueryWindowPos(hwndFrame, &swp)) {
+        /* Save the state AND the geometry to come back to. A maximized frame
+         * reports the maximized rectangle, so writing that as X/Y/CX/CY made
+         * "restore" mean "full screen" on the next run and lost the real size;
+         * the normal geometry tracked in WM_SIZE is what belongs in the file. */
+        const BOOL bMax = (BOOL)((swp.fl & SWP_MAXIMIZE) != 0);
+        const SWP *pUse = (bMax && bHaveRestore) ? &swpRestore : &swp;
         IniWriteSection(SEC_WIN);
-        IniWriteInt("X",  swp.x);
-        IniWriteInt("Y",  swp.y);
-        IniWriteInt("CX", swp.cx);
-        IniWriteInt("CY", swp.cy);
+        IniWriteInt("X",  pUse->x);
+        IniWriteInt("Y",  pUse->y);
+        IniWriteInt("CX", pUse->cx);
+        IniWriteInt("CY", pUse->cy);
+        IniWriteInt("Maximized", bMax ? 1 : 0);
     }
 
     /* The palette: one line per semantic slot. Written as name=colour,bold so
@@ -1057,29 +1165,14 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             Sci(SCI_STYLESETSIZE, MPFROMLONG(STYLE_DEFAULT), MPFROMLONG(11));
             Sci(SCI_STYLESETFONT, MPFROMLONG(STYLE_DEFAULT), MPFROMP((void *)"Courier"));
             Sci(SCI_STYLECLEARALL, 0, 0);
-            Sci(SCI_SETTEXT, 0, MPFROMP((void *)
-                "Notepad2 frame + Scintilla, both on OS/2 Presentation Manager.\r\n"
-                "\r\n"
-                "Edit menu drives SCI_UNDO / SCI_CUT / SCI_COPY / SCI_PASTE, so the\r\n"
-                "clipboard path goes through DosAllocSharedMem + WinSetClipbrdData.\r\n"
-                "\r\n"
-                "Select a line, Edit/Copy, then Edit/Paste to exercise the clipboard.\r\n"
-                "\r\n"
-                "Search menu: Find (Ctrl+F), Replace (Ctrl+H), F3 / Shift+F3, Go To (Ctrl+G).\r\n"
-                "Searching is Scintilla's own SCI_FINDTEXT - the dialog is the ported part.\r\n"
-                "\r\n"
-                "Edit/Lines has Modify, Align and Sort; Settings has Tabs, Long Lines and\r\n"
-                "Word Wrap. All ten dialogs are Notepad2's own, converted to PM.\r\n"
-                "\r\n"
-                "banana\r\n"
-                "Apple\r\n"
-                "cherry\r\n"
-                "apple\r\n"
-                "item10\r\n"
-                "item9\r\n"));
+            /* A new window starts EMPTY. This used to load a block of
+             * scaffolding - a feature tour plus the unsorted word list the sort
+             * commands were developed against - which meant File/Launch/Empty
+             * Window was never actually empty, and the text looked like it had
+             * been inherited from the window it was launched from. */
             Sci(SCI_EMPTYUNDOBUFFER, 0, 0);
-            /* Without this the starter text counts as an unsaved change and the
-               very first File/New would prompt to save it. */
+            /* Nothing has been typed, so the buffer is not modified: without
+               this the first File/New would prompt to save an empty document. */
             Sci(SCI_SETSAVEPOINT, 0, 0);
             ApplyView();
             WinSetFocus(HWND_DESKTOP, hwndSci);
@@ -1095,19 +1188,13 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                 hwndStatus[i] = WinCreateWindow(hwnd, (PSZ)WC_STATIC, (PSZ)"",
                         WS_VISIBLE | SS_TEXT | DT_LEFT | DT_VCENTER,
                         0, 0, 0, 0, hwnd, HWND_TOP, aId[i], NULL, NULL);
-            /* Toolbar buttons carry menu command ids, so pressing one
-             * produces exactly the WM_COMMAND the menu item would. */
-            {
-                int j;
-                for (j = 0; j < NTOOLBUTTONS && aToolButtons[j].id; j++)
-                    ahwndTool[j] = WinCreateWindow(hwnd, (PSZ)WC_BUTTON,
-                            (PSZ)aToolButtons[j].pszText,
-                            WS_VISIBLE | BS_PUSHBUTTON | BS_NOPOINTERFOCUS,
-                            0, 0, 0, 0, hwnd, HWND_TOP,
-                            aToolButtons[j].id, NULL, NULL);
-            }
-            /* Size the bar from the font, not a guess: a bigger system font
-             * must not clip the text. */
+            /* Toolbar items carry menu command ids, so pressing one produces
+             * exactly the WM_COMMAND the menu item would. */
+            ToolbarCreate(hwnd, aToolItems, NTOOLITEMS);
+            ToolbarMeasure(hwnd);
+
+            /* The statusbar is sized from the font for the same reason the
+             * toolbar is: a literal clips the text on a larger system font. */
             {
                 HPS hps = WinGetPS(hwnd);
                 FONTMETRICS fm;
@@ -1140,8 +1227,20 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
         LONG cx = (LONG)SHORT1FROMMP(mp2);
         LONG cy = (LONG)SHORT2FROMMP(mp2);
         LONG cyBar  = bStatusbar ? cyStatus : 0;
-        LONG cyTool = bToolbar ? cyToolbar : 0;
+        LONG cyTool = bToolbar ? ToolbarHeight() : 0;
         int i;
+
+        /* Remember the frame geometry whenever it is in its normal state, so
+         * that exiting while maximized still saves a sane size to restore to. */
+        {
+            SWP  swpF;
+            HWND hwndF = WinQueryWindow(hwnd, QW_PARENT);
+            if (hwndF != NULLHANDLE && WinQueryWindowPos(hwndF, &swpF) &&
+                !(swpF.fl & (SWP_MAXIMIZE | SWP_MINIMIZE))) {
+                swpRestore   = swpF;
+                bHaveRestore = TRUE;
+            }
+        }
 
         /* Bottom-left origin: the statusbar sits at y = 0 and the editor
          * ABOVE it, which is the opposite of the arithmetic a Win32 layout
@@ -1152,22 +1251,9 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                             SWP_SIZE | SWP_MOVE | SWP_SHOW);
 
         /* The toolbar goes at the TOP, which in bottom-left coordinates is
-         * the LARGEST y - the opposite of a Win32 layout's arithmetic. */
-        {
-            int iSlot = 0;      /* position, which skips hidden buttons */
-            for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++) {
-                if (ahwndTool[i] == NULLHANDLE)
-                    continue;
-                if (!bToolbar || !(flToolMask & (1UL << i))) {
-                    WinShowWindow(ahwndTool[i], FALSE);
-                    continue;
-                }
-                WinSetWindowPos(ahwndTool[i], HWND_TOP,
-                                4 + iSlot * 48, cy - cyTool + 2, 46, cyTool - 4,
-                                SWP_SIZE | SWP_MOVE | SWP_SHOW);
-                iSlot++;
-            }
-        }
+         * the LARGEST y - the opposite of a Win32 layout's arithmetic. The
+         * engine knows that; it takes the client size as PM reports it. */
+        ToolbarLayout(hwnd, cx, cy, bToolbar, flToolMask);
         for (i = 0; i < 4; i++) {
             if (hwndStatus[i] == NULLHANDLE)
                 continue;
@@ -1222,6 +1308,8 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
     case WM_TIMER:
         if (SHORT1FROMMP(mp1) == IDT_WATCH)
             FileWatchTick(hwnd);
+        else if (SHORT1FROMMP(mp1) == IDT_ONTOP && bAlwaysOnTop)
+            AssertOnTop(WinQueryWindow(hwnd, QW_PARENT));
         break;
 
     case WM_CHANGENOTIFY: {
@@ -1320,10 +1408,13 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             if (pscn) {
                 switch (pscn->nmhdr.code) {
                 case SCN_UPDATEUI:
-                    if (iMarkOccurrences) {
+                    /* The statusbar follows the caret on EVERY update, not only
+                     * when Mark Occurrences happens to be on. Nesting the call
+                     * inside that test left Ln/Col frozen in the default
+                     * configuration, which reads as a dead statusbar. */
+                    if (iMarkOccurrences)
                         EditMarkAll(hwndSci, iMarkOccurrences, bMarkOccCase, bMarkOccWord);
-                        UpdateStatusbar();
-                    }
+                    UpdateStatusbar();
                     break;
 
                 case SCN_CHARADDED:
@@ -1624,10 +1715,10 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
             break;
 
         case IDM_CUSTOMIZETB: {
+            /* Buttons only, in table order - the same order the mask bits are
+             * numbered in, so the dialog's checkboxes line up with them. */
             const char *apsz[NTOOLBUTTONS];
-            int i, n = 0;
-            for (i = 0; i < NTOOLBUTTONS && aToolButtons[i].id; i++)
-                apsz[n++] = aToolButtons[i].pszText;
+            const int n = ToolbarButtonLabels(apsz, NTOOLBUTTONS);
             if (EditToolbarCustomizeDlg(hwnd, apsz, n, &flToolMask)) {
                 RECTL rcl;
                 WinQueryWindowRect(hwnd, &rcl);
@@ -1896,10 +1987,7 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
 
         case IDM_ALWAYSONTOP:
             bAlwaysOnTop = !bAlwaysOnTop;
-            /* PM has no WS_EX_TOPMOST; the equivalent is to place the frame
-             * behind HWND_TOP and keep it there with SWP_ZORDER. */
-            WinSetWindowPos(hwndFrame, bAlwaysOnTop ? HWND_TOP : HWND_BOTTOM,
-                            0, 0, 0, 0, SWP_ZORDER);
+            ApplyAlwaysOnTop(hwnd, hwndFrame);
             SyncMenu(hwndFrame);
             break;
 
@@ -2160,12 +2248,20 @@ int main(int argc, char *argv[])
 
 createWindow:
     Scintilla_RegisterClasses((void *)hab);
-    WinRegisterClass(hab, (PSZ)"Notepad2Client", ClientWndProc, CS_SIZEREDRAW, 0);
+    /* NOT CS_SIZEREDRAW: "whole window is redrawn on any size change"
+     * [os2ref/pm-window-messaging.md 183]. The client has nothing of its own to
+     * redraw on a resize - WM_SIZE repositions the children - so the flag only
+     * bought a full-area repaint of the background underneath the editor on
+     * every mouse-move of the sizing border, which is the resize flicker.
+     * CS_CLIPCHILDREN excludes the children from the client's own drawing, so
+     * what does still repaint cannot paint over Scintilla first. */
+    WinRegisterClass(hab, (PSZ)"Notepad2Client", ClientWndProc, CS_CLIPCHILDREN, 0);
 
     hwndFrame = WinCreateStdWindow(HWND_DESKTOP, WS_VISIBLE, &flFrame,
                                    (PSZ)"Notepad2Client",
                                    (PSZ)"Notepad2 for OS/2 - Scintilla edition",
-                                   0, NULLHANDLE, IDD_NP2MAIN, &hwndClient);
+                                   WS_CLIPCHILDREN, NULLHANDLE, IDD_NP2MAIN,
+                                   &hwndClient);
     if (hwndFrame == NULLHANDLE) {
         WinDestroyMsgQueue(hmq); WinTerminate(hab); return 1;
     }
@@ -2187,13 +2283,24 @@ createWindow:
     /* Restore the saved geometry if there is one. SWP is assigned by field
      * name throughout - its declaration order (fl, cy, cx, y, x) is the
      * reverse of WinSetWindowPos's arguments [os2ref/pm-window-messaging.md]. */
-    if (bHaveSavedPos)
+    if (bHaveSavedPos) {
+        ClampToDesktop(&swpSaved);
         WinSetWindowPos(hwndFrame, HWND_TOP,
                         swpSaved.x, swpSaved.y, swpSaved.cx, swpSaved.cy,
                         SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
-    else
+    } else
         WinSetWindowPos(hwndFrame, HWND_TOP, 40, 40, 720, 440,
                         SWP_SIZE | SWP_MOVE | SWP_SHOW | SWP_ACTIVATE);
+
+    /* Maximize AFTER the normal geometry is in place, so the frame has a
+     * sensible rectangle to restore to when the user un-maximizes. */
+    if (bStartMaximized)
+        WinSetWindowPos(hwndFrame, HWND_TOP, 0, 0, 0, 0, SWP_MAXIMIZE);
+
+    /* A restored "always on top" has to start its timer too, or the setting
+     * survives in the file and does nothing until the menu item is toggled. */
+    if (bAlwaysOnTop)
+        ApplyAlwaysOnTop(hwndClient, hwndFrame);
 
     /* One loop drives both the frame and the modeless Find dialog. PM needs no
      * IsDialogMessage equivalent: the dialog is an ordinary window in this

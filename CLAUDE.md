@@ -35,7 +35,7 @@ cd /tmp/np2
 wrc -r -i=C:/usr/include np2.rc     # wrc does NOT inherit the compiler include path
 g++ -std=c++11 -Zomf -O1 -I/tmp/sci/scintilla/include -I/tmp/sci/scintilla/src \
     np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c \
-    np2enc.c np2browse.c np2print.c np2watch.c \
+    np2enc.c np2browse.c np2print.c np2watch.c np2tool.c \
     np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe                 # binds resources INTO the exe
 ```

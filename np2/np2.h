@@ -310,6 +310,26 @@
 #define IDD_BROWSE          560
 #define IDC_BROWSECNR       830
 #define IDC_BROWSEPATH      831
+/* The "Directory:" label needs an id only so the resizable dialog's WM_SIZE can
+ * move it; -1 leaves it unreachable from WinWindowFromID. */
+#define IDC_BROWSEPATHLBL   832
+
+/* Toolbar bitmaps. 16x16, cut from Notepad2's own res/Toolbar.bmp strip and
+ * composited onto the PM button face - PM buttons do not blend alpha, and the
+ * strip's edges are anti-aliased. A BS_BITMAP button names its bitmap through
+ * its window TEXT as "#id" [DOC-IBM - pm3.txt, WC_BUTTON styles]. */
+#define IDB_TB_NEW         1000
+#define IDB_TB_OPEN        1001
+#define IDB_TB_SAVE        1002
+#define IDB_TB_UNDO        1003
+#define IDB_TB_REDO        1004
+#define IDB_TB_CUT         1005
+#define IDB_TB_COPY        1006
+#define IDB_TB_PASTE       1007
+#define IDB_TB_FIND        1008
+#define IDB_TB_REPL        1009
+#define IDB_TB_GOTO        1010
+#define IDB_TB_WRAP        1011
 
 /* File change notification. The three IDC_WATCH_* mode buttons MUST stay
  * contiguous and in FILEWATCH_* order - np2watch.c indexes them as

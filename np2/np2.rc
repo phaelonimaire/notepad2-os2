@@ -535,9 +535,15 @@ END
 
 DLGTEMPLATE IDD_BROWSE
 BEGIN
-    DIALOG "Browse", IDD_BROWSE, 20, 20, 360, 220, , FCF_TITLEBAR | FCF_SYSMENU
+    /* FCF_SIZEBORDER makes it resizable; BrowseDlgProc's WM_SIZE relays the
+       controls, since a PM dialog does not reflow on its own. WS_CLIPCHILDREN
+       (the window-style field, left blank on the fixed-size dialogs) keeps the
+       dialog from painting its background over the controls as they move -
+       without it a resize repaints the whole dialog and the container is drawn
+       over before it redraws itself, which reads as flicker and stale content. */
+    DIALOG "Browse", IDD_BROWSE, 20, 20, 360, 220, WS_CLIPCHILDREN, FCF_TITLEBAR | FCF_SYSMENU | FCF_SIZEBORDER
     BEGIN
-        LTEXT "Directory:", -1, 8, 202, 60, 8
+        LTEXT "Directory:", IDC_BROWSEPATHLBL, 8, 202, 60, 8
         LTEXT "", IDC_BROWSEPATH, 70, 202, 282, 8
 
         /* CCS_MINIRECORDCORE makes records MINIRECORDCORE rather than
@@ -673,3 +679,28 @@ BEGIN
     VK_INSERT, IDM_PASTE, VIRTUALKEY, SHIFT
     VK_DELETE, IDM_CUT,   VIRTUALKEY, SHIFT
 END
+
+/* Toolbar bitmaps.
+ *
+ * OS/2 resource statements name the TYPE first - "BITMAP id file", the reverse
+ * of the Windows .rc order - and wrc rejects the Windows form with a syntax
+ * error on the id.
+ *
+ * The files are WINDOWS 3.x .bmp, which is what PM loads here. Measured, not
+ * assumed: of the five formats tried through GpiLoadBitmap on Warp Server,
+ * Windows 3.x at 24bpp and 8bpp both load, OS/2 1.x at 8bpp and 4bpp both load,
+ * and OS/2 1.x at 24BPP IS THE ONE THAT FAILS - PMERR_INV_BITMAP_DIMENSION
+ * (0x2048), despite being a 16x16 bitmap. Do not "correct" these to the OS/2
+ * format on the assumption that PM wants its own. */
+BITMAP IDB_TB_NEW   "res/tb_new.bmp"
+BITMAP IDB_TB_OPEN  "res/tb_open.bmp"
+BITMAP IDB_TB_SAVE  "res/tb_save.bmp"
+BITMAP IDB_TB_UNDO  "res/tb_undo.bmp"
+BITMAP IDB_TB_REDO  "res/tb_redo.bmp"
+BITMAP IDB_TB_CUT   "res/tb_cut.bmp"
+BITMAP IDB_TB_COPY  "res/tb_copy.bmp"
+BITMAP IDB_TB_PASTE "res/tb_paste.bmp"
+BITMAP IDB_TB_FIND  "res/tb_find.bmp"
+BITMAP IDB_TB_REPL  "res/tb_repl.bmp"
+BITMAP IDB_TB_GOTO  "res/tb_goto.bmp"
+BITMAP IDB_TB_WRAP  "res/tb_wrap.bmp"

@@ -112,7 +112,7 @@ g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /t
 cd ../np2 && wrc -r -i=C:/usr/include np2.rc
 g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
     np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c \
-    np2enc.c np2browse.c np2print.c np2watch.c \
+    np2enc.c np2browse.c np2print.c np2watch.c np2tool.c \
     np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
 wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
 ```
