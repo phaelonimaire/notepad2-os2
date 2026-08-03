@@ -100,9 +100,22 @@ inline size_t StrideFor(int width) {
 class FontPM {
 public:
 	FATTRS fattrs;
-	LONG pointSize;
+	// A DEVICE HEIGHT IN PELS, not a point size. Scintilla runs the requested
+	// point size through Surface::DeviceHeightFont before building the
+	// FontParameters [scintilla/src/ViewStyle.cxx: DeviceHeightFont(sizeZoomed)
+	// then fp(..., deviceHeight / SC_FONT_SIZE_MULTIPLIER, ...)], and this
+	// port's DeviceHeightFont converts points -> pels. Treating fp.size as
+	// points converts it a second time: at 120 dpi a 10pt request became 17,
+	// and the editor drew every font ~1.7x larger than the size box said.
+	LONG pixelHeight;
+	// Whether this request resolved to a scalable font. Image (bitmap) faces such as
+	// "System VIO" have no outline version, and they are sized through FATTRS rather
+	// than through GpiSetCharBox - see SurfaceImpl::SetFont.
+	bool outline;
+	// Whether the face name has been looked up against the installed fonts yet.
+	bool resolved;
 
-	FontPM() : pointSize(10) {
+	FontPM() : pixelHeight(12), outline(true), resolved(false) {
 		memset(&fattrs, 0, sizeof(fattrs));
 	}
 };
@@ -139,9 +152,9 @@ void Font::Create(const FontParameters &fp) {
 		strncpy(pf->fattrs.szFacename, fp.faceName, FACESIZE - 1);
 		pf->fattrs.szFacename[FACESIZE - 1] = '\0';
 	}
-	pf->pointSize = static_cast<LONG>(fp.size + 0.5f);
-	if (pf->pointSize <= 0)
-		pf->pointSize = 10;
+	pf->pixelHeight = static_cast<LONG>(fp.size + 0.5f);
+	if (pf->pixelHeight <= 0)
+		pf->pixelHeight = 10;
 
 	fid = static_cast<FontID>(pf);
 }
@@ -342,6 +355,105 @@ SurfaceImpl::SurfaceImpl()
 	memset(&currentFM, 0, sizeof(currentFM));
 }
 
+// Resolve a face NAME against the fonts the system actually has, and fill in FATTRS
+// so that GpiCreateLogFont selects that exact physical font.
+//
+// Asking by name alone does not work, and fails silently. GpiCreateLogFont reports
+// FONT_MATCH (2) for a NEAREST match as well as an exact one - FONT_MATCH_NEAREST is
+// the same value 2 [pmgpi.h:346,350] - so requesting an image face such as "System VIO"
+// while also demanding FATTR_FONTUSE_OUTLINE returns "match" having quietly substituted
+// a scalable font. That substitution is what rendered every face as Courier, and no
+// return code distinguishes it.
+//
+// GpiQueryFonts enumerates the real fonts for a facename; FONTMETRICS.lMatch is the
+// handle to one specific physical font, and putting it in FATTRS.lMatch asks for that
+// font and nothing else [DOC-IBM - gpi-fonts-and-metafiles.md]. fsDefn's FM_DEFN_OUTLINE
+// bit says whether it is scalable, which decides both the fsFontUse flags and whether
+// the size comes from GpiSetCharBox or from FATTRS.
+static bool ResolveFaceToFattrs(HPS hps, const char *faceName, LONG pixelHeight,
+                                LONG dpiY, FATTRS *pfa, bool *pOutline) {
+	if (hps == NULLHANDLE || faceName == nullptr || faceName[0] == '\0')
+		return false;
+
+	LONG wanted = 0;
+	const LONG available = GpiQueryFonts(hps, QF_PUBLIC, (PCSZ)faceName,
+	                                     &wanted, static_cast<LONG>(sizeof(FONTMETRICS)),
+	                                     nullptr);
+	if (available <= 0)
+		return false;                 // no such face - let the caller ask by name
+
+	std::vector<FONTMETRICS> metrics(static_cast<size_t>(available));
+	wanted = available;
+	GpiQueryFonts(hps, QF_PUBLIC, (PCSZ)faceName, &wanted,
+	              static_cast<LONG>(sizeof(FONTMETRICS)), &metrics[0]);
+	if (wanted <= 0)
+		return false;
+
+	// Choose an image size by the font's OWN declared point size, in decipoints
+	// [DOC-IBM - pm4.txt, FONTMETRICS sNominalPointSize: "Measured in decipoints",
+	// and "For a bit-map font, this field contains the height of the font"].
+	//
+	// Converting points to pels and matching lMaxBaselineExt does NOT work, because
+	// for an image family that field is not monotonic in the point size. System VIO
+	// is the worked example - it ships the DOS text cells, normal and narrow, and
+	// its 17 instances run (nominal pt -> baseline x width):
+	//
+	//     2->12x5   3->16x5   4->10x6   5->14x6   6->15x7   7->25x7
+	//     8-> 8x8   9->10x8  10->12x8  11->14x8  12->16x8  13->18x8
+	//    14->18x10 15->16x12 16->20x12 17->22x12 18->30x12
+	//
+	// At 120 dpi a 5pt request converts to 8 pels and matches the 8pt cell (8x8);
+	// 6pt converts to 10 and matches the 4pt cell (10x6). So one step in the size
+	// box jumped the height AND swapped a normal cell for a narrow one. Matching on
+	// the nominal size instead asks for the instance the font itself calls 5pt.
+	// The caller's height is in PELS, so convert to decipoints against the device
+	// resolution to compare with sNominalPointSize. A decipoint is 1/720 inch.
+	const LONG deciWanted = (dpiY > 0) ? (pixelHeight * 720 + dpiY / 2) / dpiY
+	                                   : pixelHeight * 10;
+
+	const FONTMETRICS *best = nullptr;
+	bool bestOutline = false;
+	LONG bestDelta = 0;
+	for (LONG i = 0; i < wanted; i++) {
+		const FONTMETRICS &fm = metrics[static_cast<size_t>(i)];
+		const bool isOutline = (fm.fsDefn & FM_DEFN_OUTLINE) != 0;
+		if (isOutline) {
+			// A scalable face can be any size - take it and stop looking.
+			best = &fm;
+			bestOutline = true;
+			break;
+		}
+		// An image font only exists at the sizes it was drawn at; take the nearest.
+		const LONG deci = fm.sNominalPointSize;
+		const LONG delta = (deci > deciWanted) ? (deci - deciWanted)
+		                                       : (deciWanted - deci);
+		if (best == nullptr || delta < bestDelta) {
+			best = &fm;
+			bestOutline = false;
+			bestDelta = delta;
+		}
+	}
+	if (best == nullptr)
+		return false;
+
+	pfa->lMatch = best->lMatch;         // "this physical font", not "something like it"
+	pfa->idRegistry = best->idRegistry;
+	pfa->usCodePage = best->usCodePage;
+	strncpy(pfa->szFacename, best->szFacename, FACESIZE - 1);
+	pfa->szFacename[FACESIZE - 1] = '\0';
+	if (bestOutline) {
+		pfa->fsFontUse = FATTR_FONTUSE_OUTLINE | FATTR_FONTUSE_TRANSFORMABLE;
+		pfa->lMaxBaselineExt = 0;       // GpiSetCharBox supplies the size
+		pfa->lAveCharWidth = 0;
+	} else {
+		pfa->fsFontUse = 0;             // an image font must not be asked for outline
+		pfa->lMaxBaselineExt = best->lMaxBaselineExt;
+		pfa->lAveCharWidth = best->lAveCharWidth;
+	}
+	*pOutline = bestOutline;
+	return true;
+}
+
 // Bind a FontPM's FATTRS request to an lcid in THIS presentation space and select it.
 //
 // GpiCreateLogFont(HPS, PSTR8 pName, LONG lLcid, PFATTRS) creates the logical font and
@@ -381,6 +493,17 @@ void SurfaceImpl::SetFont(Font &font_) {
 		// A setid must not be redefined while it is the current pattern/marker set, and
 		// must not be deleted while selected [DOC-IBM - gpi-fonts-and-metafiles.md 1].
 		// Dropping to the default font first keeps both rules satisfied.
+		// Pin the request to a real physical font BEFORE creating the logical font.
+		// Done once per FontPM: the answer depends on the installed fonts, not on
+		// which PS is asking.
+		if (!pf->resolved) {
+			bool isOutline = true;
+			if (ResolveFaceToFattrs(hps, pf->fattrs.szFacename, pf->pixelHeight,
+			                        LogPixelsY(), &pf->fattrs, &isOutline))
+				pf->outline = isOutline;
+			pf->resolved = true;
+		}
+
 		GpiSetCharSet(hps, LCID_DEFAULT);
 		if (GpiCreateLogFont(hps, nullptr, lcid, &pf->fattrs) == GPI_ERROR)
 			return;
@@ -392,7 +515,11 @@ void SurfaceImpl::SetFont(Font &font_) {
 
 	// Size an outline font through the character box. In a PU_PELS PS the box is in
 	// pels, so convert points -> pels with the device's vertical font resolution.
-	const LONG pels = (pf->pointSize * LogPixelsY() + 36) / 72;
+	// An image font must NOT be sized this way - its size came from FATTRS above,
+	// and a character box applied to it distorts the glyphs instead of scaling them.
+	// pixelHeight IS the device height - DeviceHeightFont already did points->pels,
+	// so converting again here is what made every outline font oversized too.
+	const LONG pels = pf->outline ? pf->pixelHeight : 0;
 	if (pels > 0) {
 		SIZEF box;
 		box.cx = MAKEFIXED(pels, 0);
@@ -1454,7 +1581,7 @@ void ListBoxImpl::SetFont(Font &font) {
 	// [DOC-IBM - PP_FONTNAMESIZE, pm-controls.md].
 	char spec[FACESIZE + 16];
 	snprintf(spec, sizeof(spec), "%ld.%s",
-		static_cast<long>(pf->pointSize), pf->fattrs.szFacename);
+		static_cast<long>(pf->pixelHeight), pf->fattrs.szFacename);
 	WinSetPresParam(reinterpret_cast<HWND>(wid), PP_FONTNAMESIZE,
 		static_cast<ULONG>(strlen(spec) + 1), spec);
 }

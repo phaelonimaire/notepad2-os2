@@ -540,8 +540,15 @@ void Style_Apply(HWND hwndEdit, int iScheme, const char *pszFontFace, int iFontS
      * and only the plain text changes, which looks like a half-applied font. */
     SciP(hwndEdit, SCI_STYLESETFONT, STYLE_DEFAULT, pszFontFace);
     SciMsg(hwndEdit, SCI_STYLESETSIZE, STYLE_DEFAULT, (const void *)(LONG)iFontSize);
-    SciMsg(hwndEdit, SCI_STYLESETFORE, STYLE_DEFAULT, (const void *)NP2C_BLACK);
+    /* The "Default text" palette slot, not a hardcoded black. STYLECLEARALL below
+     * copies STYLE_DEFAULT over every other style, so a literal here overwrote the
+     * user's chosen colour everywhere and made that slot look inert in Customize
+     * Colours - it was being set, then immediately discarded. */
+    SciMsg(hwndEdit, SCI_STYLESETFORE, STYLE_DEFAULT,
+           (const void *)aSemSet[iSemActive][SEM_DEFAULT].clr);
     SciMsg(hwndEdit, SCI_STYLESETBACK, STYLE_DEFAULT, (const void *)NP2C_WHITE);
+    if (aSemSet[iSemActive][SEM_DEFAULT].bBold)
+        SciMsg(hwndEdit, SCI_STYLESETBOLD, STYLE_DEFAULT, (const void *)1L);
     SciL(hwndEdit, SCI_STYLECLEARALL, 0);
 
     SciL(hwndEdit, SCI_SETLEXER, ps->iLexer);
@@ -607,16 +614,41 @@ BOOL Style_ChooseFont(HWND hwndOwner, char *pszFace, int cchFace, int *piSize)
     fd.pszFamilyname  = (PSZ)szFamily;
     fd.usFamilyBufLen = sizeof(szFamily);
     fd.fxPointSize    = MAKEFIXED(*piSize, 0);
-    fd.fl             = FNTS_CENTER | FNTS_INITFROMFATTRS | FNTS_FIXEDWIDTHONLY;
+    /* NOT FNTS_INITFROMFATTRS: it tells the dialog to seed itself from fd.fAttrs,
+     * and fAttrs is zeroed here - so the dialog opened from an empty FATTRS with
+     * usRecordLength 0 rather than from the current font. Without the flag it
+     * seeds from pszFamilyname + fxPointSize, which ARE filled in above. */
+    fd.fl             = FNTS_CENTER;
+
+    /* Every font by default; hold Shift to restrict the list to fixed-width.
+     * This is Notepad2's own behaviour - src/Styles.c does
+     *     if (HIBYTE(GetKeyState(VK_SHIFT))) cf.Flags |= CF_FIXEDPITCHONLY;
+     * - and the port had the restriction on unconditionally, which put every
+     * proportional font out of reach. Nothing needs it: the platform layer
+     * measures with GpiQueryTextBox per prefix rather than assuming a uniform
+     * advance, so Scintilla gets true per-character positions either way.
+     *
+     * WinGetKeyState reports the state as of the message being handled, which is
+     * what "hold Shift while opening it" means; 0x8000 is "down"
+     * [DOC-IBM - pm2.txt, WinGetKeyState - Returns]. */
+    if (WinGetKeyState(HWND_DESKTOP, VK_SHIFT) & 0x8000)
+        fd.fl |= FNTS_FIXEDWIDTHONLY;
     fd.clrFore        = CLR_BLACK;   /* PM colour INDEX here, not RGB */
     fd.clrBack        = CLR_WHITE;
     fd.usWeight       = 5;
 
     if (WinFontDlg(HWND_DESKTOP, hwndOwner, &fd) && fd.lReturn == DID_OK) {
-        strncpy(pszFace, (char *)fd.fAttrs.szFacename, cchFace - 1);
+        /* Take the FAMILY name, which the dialog writes back into the
+         * pszFamilyname buffer. fAttrs.szFacename is the FACE - "Courier Bold"
+         * rather than "Courier" - and a face name handed to GpiCreateLogFont as
+         * a family does not match, so the request silently fell back to the
+         * default font and the chosen font appeared not to apply at all. */
+        strncpy(pszFace, szFamily, cchFace - 1);
         pszFace[cchFace - 1] = '\0';
-        if (!pszFace[0])
-            strncpy(pszFace, szFamily, cchFace - 1);
+        if (!pszFace[0]) {
+            strncpy(pszFace, (char *)fd.fAttrs.szFacename, cchFace - 1);
+            pszFace[cchFace - 1] = '\0';
+        }
         *piSize = (int)(fd.fxPointSize >> 16);
         if (*piSize < 4)
             *piSize = 10;
