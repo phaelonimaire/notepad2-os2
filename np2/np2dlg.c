@@ -869,10 +869,18 @@ static void SchemeShowSlot(HWND hwnd, int iSlot)
     WinCheckButton(hwnd, IDC_SLOTBOLD, aEditBold[iSlot] ? 1UL : 0UL);
     {
         CHAR sz[96];
-        sprintf(sz, "%s%s - %s", Style_SlotName(iSlot),
-                aEditBold[iSlot] ? " (bold)" : "",
-                Style_ColourName(Style_ColourIndexOf(aEditClr[iSlot])));
+        HWND hwndPrev = WinWindowFromID(hwnd, IDC_SLOTPREVIEW);
+        snprintf(sz, sizeof(sz), "%s%s - %s", Style_SlotName(iSlot),
+                 aEditBold[iSlot] ? " (bold)" : "",
+                 Style_ColourName(Style_ColourIndexOf(aEditClr[iSlot])));
         WinSetDlgItemText(hwnd, IDC_SLOTPREVIEW, (PSZ)sz);
+        /* Actually show the colour rather than only naming it. A static draws in
+         * the default foreground until told otherwise; PP_FOREGROUNDCOLOR takes
+         * an RGB value, which is what the palette stores [pmwin.h:2512]. */
+        if (hwndPrev != NULLHANDLE) {
+            LONG rgb = (LONG)aEditClr[iSlot];
+            WinSetPresParam(hwndPrev, PP_FOREGROUNDCOLOR, sizeof(rgb), (PVOID)&rgb);
+        }
     }
 }
 
