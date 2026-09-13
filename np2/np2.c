@@ -1417,6 +1417,15 @@ MRESULT EXPENTRY ClientWndProc(HWND hwnd, ULONG msg, MPARAM mp1, MPARAM mp2)
                     UpdateStatusbar();
                     break;
 
+                case SCN_SAVEPOINTREACHED:
+                case SCN_SAVEPOINTLEFT:
+                    /* The modified marker lives in the statusbar, which otherwise
+                     * refreshes only on SCN_UPDATEUI. A save sets the save point
+                     * without moving the caret, so `*` stayed up after Ctrl+S.
+                     * Notepad2 reacts to these same two notifications. */
+                    UpdateStatusbar();
+                    break;
+
                 case SCN_CHARADDED:
                     /* Auto-completion while typing: offer the list once the
                      * partial word is long enough to narrow anything down.
