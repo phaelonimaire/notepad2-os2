@@ -10,6 +10,14 @@ Install these packages from the netlabs RPM repositories:
 yum install gcc gcc-c++ gcc-wlink gcc-wrc libstdc++ libstdc++-devel
 ```
 
+If `yum` stops with `Cannot retrieve repository metadata` for one repository, it installs nothing at
+all, even when the packages are in another repository. Every package above is in `netlabs-rel`, so
+switch off the unreachable one for that run (`yum repolist` names them):
+
+```sh
+yum install --disablerepo=arcanoae-rel gcc gcc-c++ gcc-wlink gcc-wrc libstdc++ libstdc++-devel
+```
+
 Check what is installed with `rpm -qa | grep -E "^(gcc|libstdc)"`. `command -v` is not a reliable
 test on OS/2. The port is built with GCC 9.2.0.
 
