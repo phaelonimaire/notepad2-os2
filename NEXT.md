@@ -1,9 +1,28 @@
 # Notepad2 for OS/2 — status and next steps
 
-Checkpoint: 2026-08-02 (an audit, then a long pass in front of the running app: the font pipeline,
-a resizable file browser, and a real toolbar with icons — all verified on screen).
+Checkpoint: 2026-09-12 — **public, with releases 0.1 and 0.1.1.** Repository
+`github.com/phaelonimaire/notepad2-os2`, tag `0.1.1` at `6daca96`.
 
-Previously: 2026-08-01 (toolbar, file change notification, and a mouse-capable test harness).
+- **`build.sh` + `BUILD.md`** replace the recipe that used to live here. A clean build from a fresh
+  GitHub download was checked on a full clone of the VM template (`OS2Linux`
+  `docs/OS2_TEST_VM_TEMPLATE.md`): 146 units, exit 0, the exe runs.
+- **Seen working from the release zip** on fresh clones of Warp Server for e-business 4.5 and
+  **eComStation 2.1** (kLIBC 0.1.13, older than the 0.1.14 it was built with). On both: highlighting,
+  toolbar icons, typing and saving (read back byte-exact), Find, Alt+F4. **Not tried on ArcaOS.**
+- **Fixed in 0.1.1:** the `*` modified marker stayed in the statusbar after a save until the caret
+  moved, because `UpdateStatusbar()` ran only on `SCN_UPDATEUI`. The frame now handles
+  `SCN_SAVEPOINTREACHED`/`LEFT` as Notepad2 does (`0feacd7`); checked on screen through type, save,
+  type, undo.
+- **Runtime needs** only `LIBCN0`, `GCC1` and `STDCPP6` beyond system DLLs, read from the LX import
+  table, not assumed.
+- **Found on the way, not in this repo:** `yum` installs nothing if any one repository is
+  unreachable (`repos.arcanoae.com` was refusing connections on the day). `BUILD.md` has the
+  `--disablerepo` workaround.
+- **Still not seen working:** printing, and code folding (it is wired into the schemes, but nobody
+  has watched it fold).
+
+Previously: 2026-08-02 (an audit, then a long pass in front of the running app: the font pipeline,
+a resizable file browser, and a real toolbar with icons — all verified on screen).
 
 ## Where this stands
 
