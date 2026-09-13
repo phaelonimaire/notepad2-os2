@@ -7,6 +7,8 @@ The first commit vendors the Windows sources unmodified, so the whole port is on
 against upstream. The upstream readme is still at [`Readme.md`](../Readme.md); it describes the
 Windows program this was ported from, not this port.
 
+![Notepad2 for OS/2 editing a C source file, with syntax highlighting and the toolbar](screenshot.png)
+
 ## Download
 
 **[notepad2-os2.zip](https://github.com/phaelonimaire/notepad2-os2/releases/latest/download/notepad2-os2.zip)**
@@ -16,7 +18,11 @@ contains `np2.exe` and the licences. Unzip it anywhere and run `np2.exe`. Settin
 ## Requirements
 
 - **OS/2 with the Presentation Manager desktop.** Tested on OS/2 Warp Server for e-business 4.5
-  (Convenience Package). eComStation and ArcaOS have not been tried yet.
+  (Convenience Package) and on eComStation 2.1. ArcaOS has not been tried yet.
+
+  On eComStation 2.1 the three DLLs below were already installed, with an older kLIBC (0.1.13)
+  than the release was built with (0.1.14), and `np2.exe` ran without problems. eComStation also
+  includes `UNZIP.EXE` in `C:\ECS\BIN`, so the zip can be unpacked without installing anything.
 - **Three runtime DLLs from [bitwise works](https://github.com/bitwiseworks):** their kLIBC C
   library ([bitwiseworks/libc](https://github.com/bitwiseworks/libc)) and the GCC 9.2 runtime.
   Many systems already have them, because other GCC-built OS/2 software uses them too:
@@ -86,8 +92,9 @@ wrong, the correction went back into the toolkit.
 
 ## Licence
 
-Notepad2 and Notepad2-mod are BSD 3-clause ([`License.txt`](../License.txt)). Scintilla has its own
-permissive licence ([`scintilla/License.txt`](../scintilla/License.txt)).
+Notepad2 and Notepad2-mod are BSD 3-clause ([`License.txt`](../License.txt)). The OS/2 port is
+distributed under the same BSD 3-clause licence, and its copyright line is in the same file.
+Scintilla has its own permissive licence ([`scintilla/License.txt`](../scintilla/License.txt)).
 
 Credit for Notepad2 goes to Florian Balmer, and for Notepad2-mod to XhmikosR, Kai Liu and the
 contributors listed in [`Readme-mod.txt`](../Readme-mod.txt).

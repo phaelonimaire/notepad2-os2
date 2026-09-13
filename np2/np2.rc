@@ -627,6 +627,7 @@ BEGIN
         CTEXT "Notepad2 for OS/2", -1, 8, 128, 314, 10
         CTEXT "Notepad2-mod + Scintilla 3.7.5, ported to Presentation Manager.",
               -1, 8, 112, 314, 10
+        CTEXT "Version 0.1.1  -  github.com/phaelonimaire/notepad2-os2", -1, 8, 99, 314, 8
 
         LTEXT "Scintilla platform layer: PlatPM.cxx / ScintillaPM.cxx",   -1, 16, 88, 300, 8
         LTEXT "Built with GCC/kLIBC and OpenWatcom wrc.",                 -1, 16, 76, 300, 8
