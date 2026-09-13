@@ -17,18 +17,23 @@ contains `np2.exe` and the licences. Unzip it anywhere and run `np2.exe`. Settin
 
 - **OS/2 with the Presentation Manager desktop.** Tested on OS/2 Warp Server for e-business 4.5
   (Convenience Package). eComStation and ArcaOS have not been tried yet.
-- **Three runtime DLLs** from the netlabs RPM repositories. Many systems already have them, because
-  other GCC-built software uses them too:
+- **Three runtime DLLs from [bitwise works](https://github.com/bitwiseworks):** their kLIBC C
+  library ([bitwiseworks/libc](https://github.com/bitwiseworks/libc)) and the GCC 9.2 runtime.
+  Many systems already have them, because other GCC-built OS/2 software uses them too:
 
-  | DLL | Package |
+  | DLL | RPM package |
   |---|---|
   | `LIBCN0.DLL` | `libc` (kLIBC) |
   | `GCC1.DLL` | `libgcc` |
   | `STDCPP6.DLL` | `libstdc++` |
 
+  They are in the netlabs RPM repositories. Install them from the command line:
+
   ```sh
   yum install libc libgcc libstdc++
   ```
+
+  or search for the same package names in Arca Noae Package Manager.
 
   If one is missing, OS/2 refuses to start `np2.exe` and names the missing DLL.
 
