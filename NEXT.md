@@ -92,47 +92,9 @@ scheme editor as outstanding while the table above marked it done; the table was
 
 ## Build
 
-```sh
-# on the OS/2 box - see the toolkit's recipes/build-pm-app.md
-export EMXOMFLD_TYPE=wlink EMXOMFLD_LINKER=wl.exe
-
-# Scintilla core + lexers (once).  -DSCI_LEXER IS REQUIRED - see below.
-cd scintilla && for f in src/*.cxx lexlib/*.cxx; do
-    g++ -std=c++11 -DSCI_LEXER -O1 -c -Iinclude -Ilexlib -Isrc "$f" \
-        -o "/tmp/obj/$(basename $f .cxx).o"; done
-for f in lexers/*.cxx; do
-    g++ -std=c++11 -O1 -c -Iinclude -Ilexlib -Isrc "$f" \
-        -o "/tmp/objlex/$(basename $f .cxx).o"; done
-
-# platform layer
-g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/PlatPM.cxx     -o /tmp/platpm.o
-g++ -std=c++11 -DSCI_LEXER -c -Iinclude -Ilexlib -Isrc os2/ScintillaPM.cxx -o /tmp/scipm.o
-
-# the app.  Keep this source list complete - a file left off links cleanly right
-# up until something calls into it.
-cd ../np2 && wrc -r -i=C:/usr/include np2.rc
-g++ -std=c++11 -Zomf -O1 -I../scintilla/include -I../scintilla/src \
-    np2.c np2find.c np2edit.c np2dlg.c np2cmd.c np2style.c np2ini.c np2run.c \
-    np2enc.c np2browse.c np2print.c np2watch.c np2tool.c \
-    np2.def /tmp/scipm.o /tmp/platpm.o /tmp/obj/*.o /tmp/objlex/*.o -o np2.exe
-wrc np2.res np2.exe        # binds the resources INTO the .exe - not optional
-```
-
-> **`wrc np2.res np2.exe` fails with `Permission denied` while the app is still running** on the
-> guest — OS/2 locks a running executable, and the error names a temporary file
-> (`Error! E007: Error renaming temporary file "__RCTMP89__.tmp"`) rather than saying so. Close the
-> app first. Because the link step *before* it succeeded, the on-disk `.exe` is left stale rather
-> than missing, so the next test silently runs the old build.
-
-> **`np2.def` is not optional either.** Without `NAME np2 WINDOWAPI` the executable is not marked
-> as a PM application, and it then runs from some sessions and exits instantly and silently from
-> others — it worked over SSH for an entire session before anyone started it from `CMD.EXE`.
->
-> **`-DSCI_LEXER` is not optional, and omitting it fails silently.** `case SCI_SETLEXER` lives
-> inside `#ifdef SCI_LEXER` in `ScintillaBase.cxx`. Without the define, all 106 lexer objects still
-> compile, still link, `Catalogue.o` still links, `SCI_SETLEXER` still returns cleanly — and every
-> file renders in the default style with no error anywhere. The tell is `SCI_GETLEXER` returning 0
-> after you set it to something else.
+`sh build.sh` on the OS/2 guest; see [`BUILD.md`](BUILD.md) for the packages, the options, and
+the traps that fail silently when building by hand (`-DSCI_LEXER`, `np2.def`, binding the
+resources, the running-exe lock).
 
 ## Next steps, in order
 

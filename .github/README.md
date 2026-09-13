@@ -7,6 +7,31 @@ The first commit vendors the Windows sources unmodified, so the whole port is on
 against upstream. The upstream readme is still at [`Readme.md`](../Readme.md); it describes the
 Windows program this was ported from, not this port.
 
+## Download
+
+**[notepad2-os2.zip](https://github.com/phaelonimaire/notepad2-os2/releases/latest/download/notepad2-os2.zip)**
+contains `np2.exe` and the licences. Unzip it anywhere and run `np2.exe`. Settings are saved to
+`np2.ini` beside it. All releases are on the [releases page](https://github.com/phaelonimaire/notepad2-os2/releases).
+
+## Requirements
+
+- **OS/2 with the Presentation Manager desktop.** Tested on OS/2 Warp Server for e-business 4.5
+  (Convenience Package). eComStation and ArcaOS have not been tried yet.
+- **Three runtime DLLs** from the netlabs RPM repositories. Many systems already have them, because
+  other GCC-built software uses them too:
+
+  | DLL | Package |
+  |---|---|
+  | `LIBCN0.DLL` | `libc` (kLIBC) |
+  | `GCC1.DLL` | `libgcc` |
+  | `STDCPP6.DLL` | `libstdc++` |
+
+  ```sh
+  yum install libc libgcc libstdc++
+  ```
+
+  If one is missing, OS/2 refuses to start `np2.exe` and names the missing DLL.
+
 ## Status
 
 The **Scintilla platform layer is complete**: every `Surface`, `Font`, `Window`, `ListBox` and
@@ -38,14 +63,14 @@ Not seen working yet:
 
 ## Building
 
-Build on OS/2 with the netlabs RPM GCC toolchain, plus OpenWatcom's `wrc` and `wl`. The full recipe
-is under **Build** in [`NEXT.md`](../NEXT.md). Three steps fail silently if skipped:
+On OS/2, with the netlabs RPM GCC toolchain installed:
 
-- **`-DSCI_LEXER`**: without it, everything links but nothing highlights.
-- **`np2.def`** (`NAME np2 WINDOWAPI`): without it the exe is not marked as a PM app, and exits
-  instantly from some sessions.
-- **`wrc np2.res np2.exe`**: binds the resources into the exe. Close any running copy first, or it
-  fails and leaves the old exe in place.
+```sh
+sh build.sh        # produces out-os2/np2.exe
+```
+
+[`BUILD.md`](../BUILD.md) lists the packages to install and the build options, and explains the
+steps that fail silently if you build by hand.
 
 ## Why
 

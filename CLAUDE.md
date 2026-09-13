@@ -20,6 +20,11 @@ Commit 1 vendors pristine upstream, so the entire port is one additive diff agai
 
 Builds happen **on the OS/2 guest**, not here. Copy sources over with `scp`, build in `/tmp/np2`.
 
+**`build.sh` + `BUILD.md` are the public build.** The script globs `np2/*.c` but names the platform
+files, because `scintilla/os2/` also holds `editor.cxx` and `harness.cxx`, test programs with their
+own `main()`. Keep the script and the dev loop below in step. The loop below is what earlier
+sessions used, with objects cached across trees:
+
 ```sh
 export EMXOMFLD_TYPE=wlink        # -Zomf links via emxomfld, which otherwise wants a
 export EMXOMFLD_LINKER=wl.exe     # missing ilink.exe on the netlabs/Arca RPM toolchain
